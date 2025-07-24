@@ -1,24 +1,33 @@
-# Use official Node image
+# Use official Node.js image
 FROM node:22
 
-# Create app directory
+# Step 1: Install system dependencies (mysql client, openssl etc.)
+RUN apt-get update && \
+    apt-get install -y default-mysql-client openssl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Step 2: Set working directory
 WORKDIR /app
 
-# Copy dependencies
+# Step 3: Copy package files and install deps
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy app source
+# Step 4: Install Prisma CLI globally
+RUN npm install -g prisma
+
+# Step 5: Copy the rest of the source code
 COPY . .
 
-# Set environment
+# Step 6: Generate Prisma Client
+RUN npx prisma generate
+
+# Step 7: Set environment
 ENV NODE_ENV=production
 
-# Expose HTTP and SMTP port
-EXPOSE 5000
-EXPOSE 2525
+# Step 8: Expose HTTP and SMTP ports
+EXPOSE 9000
+EXPOSE 2626
 
-# Start app
-CMD ["node", "server.js"]
+# Step 9: Start your app
+CMD ["node", "index.js"]
