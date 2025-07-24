@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(uuid())
+  fullName     String
+  email        String         @unique
+  password     String
+  role         Role           @default(ADMIN)
+  domains      Domain[]       @relation("AdminDomain")
+  Subscription Subscription[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Domain {
+  id             String      @id @default(uuid())
+  name           String
+  verified       Boolean     @default(false)
+  dkimPrivateKey String?
+  adminId        String
+  admin          User        @relation("AdminDomain", fields: [adminId], references: [id])
+  dnsRecords     DnsRecord[]
+  mailboxes      Mailbox[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([name, adminId])
+  @@index([adminId])
+}
+
+model DnsRecord {
+  id        String   @id @default(uuid())
+  type      String
+  name      String
+  value     String
+  priority  Int?
+  ttl       Int?
+  verified  Boolean  @default(false)
+  domainId  String
+  domain    Domain   @relation(fields: [domainId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Mailbox {
+  id        String    @id @default(uuid())
+  address   String    @unique // Store full address like info@domain.com
+  password  String
+  domainId  String
+  isActive  Boolean   @default(false)
+  quota     Int       @default(5120) // 5GB
+  domain    Domain    @relation(fields: [domainId], references: [id])
+  messages  Message[] @relation("MailboxMessages")
+  createdAt DateTime  @default(now())
+
+  @@index([address])
+  @@index([domainId])
+}
+
+model Message {
+  id          String       @id @default(uuid())
+  subject     String
+  body        String
+  from        String
+  to          String
+  mailboxId   String
+  mailbox     Mailbox      @relation("MailboxMessages", fields: [mailboxId], references: [id])
+  attachments Attachment[]
+  createdAt   DateTime     @default(now())
+
+  @@index([mailboxId])
+}
+
+model Attachment {
+  id         String   @id @default(uuid())
+  fileName   String
+  fileType   String
+  fileUrl    String
+  messageId  String
+  message    Message  @relation(fields: [messageId], references: [id])
+  uploadedAt DateTime @default(now())
+}
+
+model Subscription {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  plan      String
+  status    String
+  startDate DateTime
+  endDate   DateTime?
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  USER
+}
+  
