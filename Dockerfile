@@ -30,4 +30,4 @@ EXPOSE 9000
 EXPOSE 2626
 
 # Step 9: Start your app
-CMD ["node", "index.js"]
+CMD ["node", "server.js"]
