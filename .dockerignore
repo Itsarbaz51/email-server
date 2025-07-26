@@ -3,3 +3,4 @@ npm-debug.log
 .env
 uploads
 email-server.pem
+.prisma  # Optional: local cache files

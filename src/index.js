@@ -2,30 +2,33 @@ import dotenv from "dotenv";
 import app from "./app.js";
 import Prisma from "./db/db.js";
 import { server } from "./smtp/smtpServer.js";
-import serverless from "serverless-http"; // ✅ New line for Vercel
 
 dotenv.config({ path: "./.env" });
 
-// DB connect karo
-async function db_connection() {
+// Start everything inside an async function
+(async function main() {
   try {
+    // 1. Connect to DB
     await Prisma.$connect();
-    console.log("DATABASE CONNECTED SUCCESSFULLY");
+    console.log("✅ DATABASE CONNECTED SUCCESSFULLY");
+
+    // 2. Start SMTP server (only in dev)
+    if (process.env.NODE_ENV !== "production") {
+      const SMTP_PORT = process.env.SMTP_PORT || 2626;
+      server.listen(SMTP_PORT, () => {
+        console.log(`📨 SMTP SERVER RUNNING ON PORT ${SMTP_PORT}`);
+      });
+    }
+
+    // 3. Start HTTP server
+    const PORT = process.env.PORT || 9000;
+    app.listen(PORT, () => {
+      console.log(`🚀 HTTP SERVER RUNNING ON http://localhost:${PORT}`);
+    });
+
   } catch (error) {
-    console.error("DATABASE CONNECTION FAILED ::", error);
-    throw error;
+    console.error("❌ SERVER START FAILED:", error);
+    process.exit(1);
   }
-}
+})();
 
-await db_connection(); // ✅ call without .then()
-
-// ✅ SMTP server start karo (this part only runs locally or in custom hosting, not on Vercel)
-if (process.env.NODE_ENV !== "production") {
-  const SMTP_PORT = process.env.SMTP_PORT || 2525;
-  server.listen(SMTP_PORT, () => {
-    console.log(`SMTP SERVER RUNNING ON PORT ${SMTP_PORT}`);
-  });
-}
-
-// ✅ Vercel ke liye Express app export karo as handler
-export const handler = serverless(app);
