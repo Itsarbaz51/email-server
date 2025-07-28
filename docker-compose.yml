@@ -2,8 +2,8 @@ version: "3.9"
 services:
   mysql:
     image: mysql:8
-    restart: always
     container_name: mysql
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: arbaz@51
       MYSQL_DATABASE: emailsaas
@@ -17,7 +17,7 @@ services:
     container_name: backend
     restart: always
     ports:
-      - "3000:3000"
+      - "9000:9000"
     env_file:
       - .env
     depends_on:
@@ -28,28 +28,9 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-    command: sh -c "npm install && node src/smtp/server.js"
-    container_name: smtp-server
-    ports:
-      - "587:587"
-    env_file:
-      - .env
+    command: node src/smtp/smtpServer.js
     depends_on:
       - backend
-
-  prisma-studio:
-    image: node:18
-    working_dir: /app
-    volumes:
-      - .:/app
-    command: sh -c "npm install && npx prisma studio"
-    container_name: prisma
-    ports:
-      - "5555:5555"
-    env_file:
-      - .env
-    depends_on:
-      - mysql
 
 volumes:
   mysql_data:

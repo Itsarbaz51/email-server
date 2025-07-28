@@ -3,3 +3,4 @@ npm-debug.log
 .env
 uploads
 email-server.pem
+email.server-instance.pem
