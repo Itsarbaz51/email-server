@@ -6,7 +6,7 @@ services:
     container_name: mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: arbaz@51
+      MYSQL_ROOT_PASSWORD: arbaz@123
       MYSQL_DATABASE: emailsaas
     ports:
       - "3306:3306"
@@ -26,6 +26,7 @@ services:
 
   smtp:
     image: node:18
+    container_name: smtp
     working_dir: /app
     volumes:
       - .:/app

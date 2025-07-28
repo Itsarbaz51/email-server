@@ -7,7 +7,6 @@ RUN npm install
 
 COPY . .
 
-# generate client at container startup, not build time
-CMD ["sh", "-c", "npx prisma generate && node src/index.js"]
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push && node src/index.js"]
 
 EXPOSE 9000

@@ -23,7 +23,7 @@ model Domain {
   id             String      @id @default(uuid())
   name           String
   verified       Boolean     @default(false)
-  dkimPrivateKey String?
+  dkimPrivateKey String?     @db.LongText
   adminId        String
   admin          User        @relation("AdminDomain", fields: [adminId], references: [id])
   dnsRecords     DnsRecord[]
