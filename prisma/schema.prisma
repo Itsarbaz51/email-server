@@ -24,6 +24,7 @@ model Domain {
   name           String
   verified       Boolean     @default(false)
   dkimPrivateKey String?     @db.LongText
+  dkimSelector   String?     @default("dkim")
   adminId        String
   admin          User        @relation("AdminDomain", fields: [adminId], references: [id])
   dnsRecords     DnsRecord[]

@@ -6,7 +6,7 @@ export const getMailTransporter = async (address, rawPassword) => {
     where: { address },
     include: {
       domain: {
-        select: { name: true, dkimPrivateKey: true },
+        select: { name: true, dkimPrivateKey: true, dkimSelector: true },
       },
     },
   });
@@ -15,9 +15,7 @@ export const getMailTransporter = async (address, rawPassword) => {
     throw new Error("Mailbox or domain not found for transporter");
   }
 
-  const { dkimPrivateKey } = mailbox.domain;
-  const domainName = mailbox.domain.name;
-  const selector = "DKIM";
+  const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
 
   return nodemailer.createTransport({
     host: "mail.primewebdev.in",
@@ -29,7 +27,7 @@ export const getMailTransporter = async (address, rawPassword) => {
     },
     dkim: {
       domainName,
-      keySelector: selector,
+      keySelector: dkimSelector || "dkim",
       privateKey: dkimPrivateKey,
     },
   });
