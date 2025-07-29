@@ -8,7 +8,7 @@ import fs from "fs/promises";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
 
-export const sendEmail = asyncHandler(async (req, res) => {
+const sendEmail = asyncHandler(async (req, res) => {
   const { from, to, subject, body } = req.body;
   const files = req.files || [];
   const senderMailboxId = req.mailbox.id;
