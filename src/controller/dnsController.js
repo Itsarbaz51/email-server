@@ -54,6 +54,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
 
   const dkimKeys = generateDKIMKeys();
 
+  console.log("DKIM private key length:", dkimKeys.privateKey.length);
   const newDomain = await Prisma.domain.create({
     data: {
       name: domain,
@@ -61,6 +62,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       dkimPrivateKey: dkimKeys.privateKey,
     },
   });
+
 
   const recordsToCreate = [
     {
