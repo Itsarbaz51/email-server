@@ -39,7 +39,7 @@ model DnsRecord {
   id        String   @id @default(uuid())
   type      String
   name      String
-  value     String
+  value     String   @db.LongText
   priority  Int?
   ttl       Int?
   verified  Boolean  @default(false)
@@ -102,4 +102,3 @@ enum Role {
   ADMIN
   USER
 }
-  
