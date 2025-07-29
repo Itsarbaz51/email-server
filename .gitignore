@@ -5,3 +5,7 @@ uploads
 email-server.pem
 email-server-instance.pem
 email.server-instance.pem
+email-host-server.pem
+Dockerfile
+docker-compose.yml
+.dockerignore
