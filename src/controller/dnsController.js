@@ -135,16 +135,16 @@ const verifyDNSRecord = async (domainId, recordType) => {
 
       if (recordType === "MX") {
         const mxRecords = await dns.resolveMx(lookupName);
-        rawRecords = mxRecords.map((r) => r.exchange);
-      } else {
+        rawRecords = mxRecords.map((r) => r.exchange.trim());
+      } else if (recordType === "TXT") {
         const txtRecords = await dns.resolveTxt(lookupName);
-        rawRecords = txtRecords.map((arr) => arr.join(""));
+        rawRecords = txtRecords.map((r) => r.join("").trim());
       }
 
       const expected =
-        recordType === "MX" ? record.value : record.value.replace(/"/g, "");
+        recordType === "MX" ? record.value.trim() : record.value.trim();
 
-      const matched = rawRecords.some((r) => r.includes(expected));
+      const matched = rawRecords.some((r) => r === expected);
 
       results.push({
         matched,
@@ -168,10 +168,7 @@ const verifyDNSRecord = async (domainId, recordType) => {
 
 export const verifyDnsHandler = asyncHandler(async (req, res) => {
   const { id: domainId } = req.params;
-  console.log(domainId);
-
   const type = req.query.type?.toUpperCase();
-  console.log(type);
 
   if (!domainId) throw new ApiError("Domain ID is required", 400);
 
@@ -191,6 +188,7 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
       );
     }
 
+    // Verify all record types: MX + TXT
     const types = ["MX", "TXT"];
     const allResults = await Promise.all(
       types.map((t) => verifyDNSRecord(domainId, t))
@@ -198,6 +196,7 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
     const flatResults = allResults.flat();
     const allVerified = flatResults.every((r) => r.matched);
 
+    // Update domain status
     const domain = await Prisma.domain.update({
       where: { id: domainId },
       data: { verified: allVerified },
