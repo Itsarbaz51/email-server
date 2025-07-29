@@ -109,3 +109,111 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     })
   );
 });
+
+const verifyDNSRecord = async (domainId, recordType) => {
+  const domain = await Prisma.domain.findUnique({
+    where: { id: domainId },
+    include: {
+      dnsRecords: {
+        where: { type: recordType },
+      },
+    },
+  });
+
+  if (!domain) throw new ApiError("Domain not found", 404);
+  if (!domain.dnsRecords.length)
+    throw new ApiError(`No ${recordType} records found`, 404);
+
+  const results = [];
+
+  for (const record of domain.dnsRecords) {
+    const lookupName =
+      record.name === "@" ? domain.name : `${record.name}.${domain.name}`;
+
+    try {
+      let rawRecords = [];
+
+      if (recordType === "MX") {
+        const mxRecords = await dns.resolveMx(lookupName);
+        rawRecords = mxRecords.map((r) => r.exchange);
+      } else {
+        const txtRecords = await dns.resolveTxt(lookupName);
+        rawRecords = txtRecords.map((arr) => arr.join(""));
+      }
+
+      const expected =
+        recordType === "MX" ? record.value : record.value.replace(/"/g, "");
+
+      const matched = rawRecords.some((r) => r.includes(expected));
+
+      results.push({
+        matched,
+        expected,
+        found: rawRecords,
+        record,
+        lookupName,
+      });
+    } catch (err) {
+      results.push({
+        matched: false,
+        error: err.message,
+        record,
+        lookupName,
+      });
+    }
+  }
+
+  return results;
+};
+
+export const verifyDnsHandler = asyncHandler(async (req, res) => {
+  const { id: domainId } = req.params;
+  console.log(domainId);
+
+  const type = req.query.type?.toUpperCase();
+  console.log(type);
+
+  if (!domainId) throw new ApiError("Domain ID is required", 400);
+
+  try {
+    if (type) {
+      const results = await verifyDNSRecord(domainId, type);
+      const allMatched = results.every((r) => r.matched);
+
+      return res.json(
+        new ApiResponse(
+          allMatched ? 200 : 400,
+          allMatched
+            ? `${type} record(s) verified`
+            : `${type} record(s) mismatch or DNS issue`,
+          { results }
+        )
+      );
+    }
+
+    const types = ["MX", "TXT"];
+    const allResults = await Promise.all(
+      types.map((t) => verifyDNSRecord(domainId, t))
+    );
+    const flatResults = allResults.flat();
+    const allVerified = flatResults.every((r) => r.matched);
+
+    const domain = await Prisma.domain.update({
+      where: { id: domainId },
+      data: { verified: allVerified },
+      select: { name: true, verified: true },
+    });
+
+    return res.json(
+      new ApiResponse(
+        allVerified ? 200 : 400,
+        allVerified
+          ? "All DNS records verified"
+          : "Some DNS records failed verification",
+        { domain, results: flatResults }
+      )
+    );
+  } catch (error) {
+    return ApiError.send(res, 500, `Verification failed: ${error.message}`);
+  }
+});
