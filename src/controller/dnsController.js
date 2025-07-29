@@ -13,16 +13,15 @@ const generateDKIMKeys = () => {
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
   });
 
+  // Clean public key: remove header/footer and line breaks
   const cleanedPublicKey = publicKey
-    .replace(/-----BEGIN PUBLIC KEY-----/, "")
-    .replace(/-----END PUBLIC KEY-----/, "")
-    .replace(/\s+/g, "")
-    .match(/.{1,200}/g)
-    .join(" ");
+    .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
+    .replace(/\s+/g, "") // remove all whitespace
+    .trim();
 
   return {
     privateKey,
-    publicKey: cleanedPublicKey,
+    publicKey: cleanedPublicKey, // compact single-line public key
   };
 };
 
