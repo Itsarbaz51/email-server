@@ -63,19 +63,18 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     },
   });
 
-
   const recordsToCreate = [
     {
       type: "MX",
       name: "@",
-      value: "mail.yoursaas.com",
+      value: "mail.primewebdev.in",
       priority: 10,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: "@",
-      value: "v=spf1 include:yoursaas.com ~all",
+      value: "v=spf1 include:mail.primewebdev.in ~all",
       domainId: newDomain.id,
     },
     {
@@ -87,7 +86,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "_dmarc",
-      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`,
+      value: "v=DMARC1; p=quarantine; rua=mailto:dmarc@primewebdev.in",
       domainId: newDomain.id,
     },
   ];
