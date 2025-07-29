@@ -1,4 +1,3 @@
-// src/controllers/dnsController.js
 import dns from "dns/promises";
 import crypto from "crypto";
 import Prisma from "../db/db.js";
@@ -13,15 +12,14 @@ const generateDKIMKeys = () => {
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
   });
 
-  // Clean public key: remove header/footer and line breaks
   const cleanedPublicKey = publicKey
     .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
-    .replace(/\s+/g, "") // remove all whitespace
+    .replace(/\s+/g, "")
     .trim();
 
   return {
     privateKey,
-    publicKey: cleanedPublicKey, // compact single-line public key
+    publicKey: cleanedPublicKey,
   };
 };
 
@@ -74,7 +72,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "@",
-      value: "v=spf1 include:mail.primewebdev.in ~all",
+      value: "v=spf1 a mx ~all",
       domainId: newDomain.id,
     },
     {

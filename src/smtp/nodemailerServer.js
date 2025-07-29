@@ -2,7 +2,6 @@ import nodemailer from "nodemailer";
 import Prisma from "../db/db.js";
 
 export const getMailTransporter = async (address, rawPassword) => {
-  // 1. Find the mailbox in your DB
   const mailbox = await Prisma.mailbox.findFirst({
     where: { address },
     include: {
@@ -16,13 +15,12 @@ export const getMailTransporter = async (address, rawPassword) => {
     throw new Error("Mailbox or domain not found for transporter");
   }
 
-  const dkimPrivateKey = mailbox.domain.dkimPrivateKey;
+  const { dkimPrivateKey } = mailbox.domain;
   const domainName = mailbox.domain.name;
-  const selector = "DKIM"; // must match selector used in DNS
+  const selector = "DKIM";
 
-  // 2. Create the transporter
   return nodemailer.createTransport({
-    host: "mail.yoursaas.com", // your VPS mail server
+    host: "mail.primewebdev.in",
     port: 587,
     secure: false,
     auth: {
