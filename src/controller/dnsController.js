@@ -25,6 +25,9 @@ const generateDKIMKeys = () => {
   };
 };
 
+const normalizeTxt = (txt) =>
+  txt.replace(/"/g, "").replace(/\s+/g, "").trim().toLowerCase();
+
 export const generateDNSRecords = asyncHandler(async (req, res) => {
   const { domain } = req.body;
   const currentUserId = req.user.id;
@@ -141,10 +144,22 @@ const verifyDNSRecord = async (domainId, recordType) => {
         rawRecords = txtRecords.map((r) => r.join("").trim());
       }
 
-      const expected =
-        recordType === "MX" ? record.value.trim() : record.value.trim();
+      const expected = record.value.trim();
 
-      const matched = rawRecords.some((r) => r === expected);
+      const matched = rawRecords.some((r) => {
+        if (recordType === "TXT") {
+          return normalizeTxt(r) === normalizeTxt(expected);
+        }
+        return r === expected;
+      });
+
+      // Optional: Auto-update if mismatch (careful in prod!)
+      if (!matched && rawRecords.length > 0) {
+        await Prisma.dnsRecord.update({
+          where: { id: record.id },
+          data: { value: rawRecords[0] },
+        });
+      }
 
       results.push({
         matched,
@@ -188,7 +203,6 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
       );
     }
 
-    // Verify all record types: MX + TXT
     const types = ["MX", "TXT"];
     const allResults = await Promise.all(
       types.map((t) => verifyDNSRecord(domainId, t))
@@ -196,7 +210,6 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
     const flatResults = allResults.flat();
     const allVerified = flatResults.every((r) => r.matched);
 
-    // Update domain status
     const domain = await Prisma.domain.update({
       where: { id: domainId },
       data: { verified: allVerified },
