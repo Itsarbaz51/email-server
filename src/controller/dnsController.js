@@ -114,6 +114,9 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
 });
 
 const verifyDNSRecord = async (domainId, recordType) => {
+  console.log("recordType", recordType);
+  console.log("domainId", domainId);
+
   const domain = await Prisma.domain.findUnique({
     where: { id: domainId },
     include: {
@@ -122,6 +125,9 @@ const verifyDNSRecord = async (domainId, recordType) => {
       },
     },
   });
+
+  console.log('domain', domain);
+  
 
   if (!domain) throw new ApiError("Domain not found", 404);
   if (!domain.dnsRecords.length)
@@ -207,14 +213,19 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
     const allResults = await Promise.all(
       types.map((t) => verifyDNSRecord(domainId, t))
     );
+    console.log("allResults", allResults);
+
     const flatResults = allResults.flat();
+    console.log("flatResults", flatResults);
     const allVerified = flatResults.every((r) => r.matched);
+    console.log("allVerified", allVerified);
 
     const domain = await Prisma.domain.update({
       where: { id: domainId },
       data: { verified: allVerified },
       select: { name: true, verified: true },
     });
+    console.log("domain", domain);
 
     return res.json(
       new ApiResponse(
