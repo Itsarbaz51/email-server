@@ -1,10 +1,9 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import nodemailer from "nodemailer";
 import path from "path";
-import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
+import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
@@ -12,8 +11,7 @@ import { decrypt } from "../utils/encryption.js";
 const sendEmail = asyncHandler(async (req, res) => {
   const { from, to, subject, body } = req.body;
   const files = req.files || [];
-  const senderMailboxId = req.mailbox.id;
-  console.log("senderMailboxId", senderMailboxId);
+  const senderMailboxId = req.mailbox?.id;
 
   if (!from || !to || !subject || !body) {
     return ApiError.send(
@@ -23,17 +21,24 @@ const sendEmail = asyncHandler(async (req, res) => {
     );
   }
 
+  if (!senderMailboxId) {
+    return ApiError.send(res, 403, "Sender mailbox not identified.");
+  }
+
+  // 📨 Normalize from address
+  const fromUser = from.split("@")[0];
+
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
-      address: from,
-      domain: {
-        verified: true,
-      },
+      address: fromUser,
+    },
+    include: {
+      domain: true,
     },
   });
 
-  if (!fromMailbox) {
+  if (!fromMailbox || !fromMailbox.domain?.verified) {
     return ApiError.send(
       res,
       403,
@@ -46,12 +51,11 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   const rawPassword = decrypt(fromMailbox.smtpPasswordEncrypted);
-
   if (!rawPassword) {
-    return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
+    return ApiError.send(res, 500, "SMTP password decryption failed.");
   }
 
-  // Process attachments
+  // 📎 Handle attachments
   const attachments = [];
   if (files.length > 0) {
     const uploadDir = path.join(process.cwd(), "uploads");
@@ -71,17 +75,17 @@ const sendEmail = asyncHandler(async (req, res) => {
     }
   }
 
-  // Validate recipient email format
+  // ✅ Validate recipient
   const recipientDomain = to.split("@")[1];
   if (!recipientDomain) {
-    return ApiError.send(res, 400, "Invalid recipient email format");
+    return ApiError.send(res, 400, "Invalid recipient email format.");
   }
 
   try {
-    // Send the email via SMTP
+    // 💌 Send Email via Nodemailer SMTP
     const transporter = await getMailTransporter(from, rawPassword);
     const mailOptions = {
-      from: `"${from.split("@")[0]}" <${from}>`,
+      from: `"${fromUser}" <${from}>`,
       to,
       subject,
       html: body,
@@ -90,11 +94,19 @@ const sendEmail = asyncHandler(async (req, res) => {
 
     const info = await transporter.sendMail(mailOptions);
 
-    // Save to DB if recipient is local
+    // 💾 If recipient is local mailbox, store message
+    const toUser = to.split("@")[0];
+
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
-        address: to,
-        domain: { verified: true },
+        address: toUser,
+        domain: {
+          name: recipientDomain,
+          verified: true,
+        },
+      },
+      include: {
+        domain: true,
       },
     });
 
@@ -114,7 +126,9 @@ const sendEmail = asyncHandler(async (req, res) => {
             })),
           },
         },
-        include: { attachments: true },
+        include: {
+          attachments: true,
+        },
       });
 
       return res
@@ -122,7 +136,7 @@ const sendEmail = asyncHandler(async (req, res) => {
         .json(new ApiResponse(201, "Email sent and stored", message));
     }
 
-    // Return success for external delivery
+    // 🌍 External recipient
     return res.status(201).json(
       new ApiResponse(201, "Email sent", {
         messageId: info.messageId,
@@ -132,7 +146,7 @@ const sendEmail = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error("SMTP Error:", error);
 
-    if (error.code === "EDNS" || error.code === "ENOTFOUND") {
+    if (["EDNS", "ENOTFOUND"].includes(error.code)) {
       return ApiError.send(
         res,
         500,
@@ -152,7 +166,6 @@ const getMessages = asyncHandler(async (req, res) => {
   const { mailboxId } = req.params;
   const userId = req.user.id;
 
-  // Verify user has access to this mailbox
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
       id: mailboxId,
