@@ -5,6 +5,8 @@ import { ApiError } from "../utils/ApiError.js";
 import { comparePassword } from "../utils/utils.js";
 
 const authMiddleware = asyncHandler(async (req, res, next) => {
+  console.log(req.body);
+  
   try {
     const token =
       req.cookies?.accessToken ||
