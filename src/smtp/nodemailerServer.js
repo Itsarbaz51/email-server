@@ -51,5 +51,8 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
       keySelector: dkimSelector || "dkim",
       privateKey: dkimPrivateKey,
     },
+    tls: {
+      rejectUnauthorized: false,
+    },
   });
 };
