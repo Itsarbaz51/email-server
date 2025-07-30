@@ -1,7 +1,6 @@
-import Prisma from "../db/db.js";
-import nodemailer from "nodemailer";
-
 export const getMailTransporter = async (fullEmail, rawPassword) => {
+  console.log("getMailTransporter called for:", fullEmail);
+
   const [username, domainPart] = fullEmail.split("@");
 
   const mailbox = await Prisma.mailbox.findFirst({
@@ -22,14 +21,19 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
     },
   });
 
-  console.log('mailbox', mailbox);
+  console.log("mailbox fetched:", mailbox);
+
   if (!mailbox || !mailbox.domain?.dkimPrivateKey) {
     throw new Error("Mailbox or domain not found for transporter");
   }
 
-  console.log('mailbox.domain', mailbox.domain);
-  
   const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
+
+  console.log("Creating nodemailer transport with:", {
+    host: `mail.${domainName}`,
+    port: 587,
+    user: fullEmail,
+  });
 
   return nodemailer.createTransport({
     host: `mail.${domainName}`,

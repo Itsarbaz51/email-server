@@ -7,13 +7,15 @@ import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
-
 const sendEmail = asyncHandler(async (req, res) => {
+  console.log("sendEmail called with:", req.body);
+
   const { from, to, subject, body } = req.body;
   const files = req.files || [];
   const senderMailboxId = req.mailbox?.id;
 
   if (!from || !to || !subject || !body) {
+    console.log("Missing required fields");
     return ApiError.send(
       res,
       400,
@@ -22,10 +24,10 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   if (!senderMailboxId) {
+    console.log("Sender mailbox not identified");
     return ApiError.send(res, 403, "Sender mailbox not identified.");
   }
 
-  // 📨 Normalize from address
   const fromUser = from.split("@")[0];
 
   const fromMailbox = await Prisma.mailbox.findFirst({
@@ -38,7 +40,10 @@ const sendEmail = asyncHandler(async (req, res) => {
     },
   });
 
+  console.log("fromMailbox fetched:", fromMailbox);
+
   if (!fromMailbox || !fromMailbox.domain?.verified) {
+    console.log("Unauthorized sender or unverified mailbox");
     return ApiError.send(
       res,
       403,
@@ -47,15 +52,17 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   if (!fromMailbox.smtpPasswordEncrypted) {
+    console.log("Missing SMTP password");
     return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
   }
 
   const rawPassword = decrypt(fromMailbox.smtpPasswordEncrypted);
   if (!rawPassword) {
+    console.log("SMTP password decryption failed");
     return ApiError.send(res, 500, "SMTP password decryption failed.");
   }
 
-  // 📎 Handle attachments
+  // Handle attachments (if any)
   const attachments = [];
   if (files.length > 0) {
     const uploadDir = path.join(process.cwd(), "uploads");
@@ -75,15 +82,17 @@ const sendEmail = asyncHandler(async (req, res) => {
     }
   }
 
-  // ✅ Validate recipient
   const recipientDomain = to.split("@")[1];
   if (!recipientDomain) {
+    console.log("Invalid recipient email format");
     return ApiError.send(res, 400, "Invalid recipient email format.");
   }
 
   try {
-    // 💌 Send Email via Nodemailer SMTP
+    console.log("Creating mail transporter...");
     const transporter = await getMailTransporter(from, rawPassword);
+    console.log("Transporter created:", transporter);
+
     const mailOptions = {
       from: `"${fromUser}" <${from}>`,
       to,
@@ -92,9 +101,10 @@ const sendEmail = asyncHandler(async (req, res) => {
       attachments,
     };
 
+    console.log("Sending email...");
     const info = await transporter.sendMail(mailOptions);
+    console.log("Email sent:", info);
 
-    // 💾 If recipient is local mailbox, store message
     const toUser = to.split("@")[0];
 
     const toMailbox = await Prisma.mailbox.findFirst({
@@ -131,12 +141,13 @@ const sendEmail = asyncHandler(async (req, res) => {
         },
       });
 
+      console.log("Email stored locally:", message);
       return res
         .status(201)
         .json(new ApiResponse(201, "Email sent and stored", message));
     }
 
-    // 🌍 External recipient
+    console.log("Email sent to external recipient");
     return res.status(201).json(
       new ApiResponse(201, "Email sent", {
         messageId: info.messageId,
