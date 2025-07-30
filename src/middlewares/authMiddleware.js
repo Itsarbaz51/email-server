@@ -4,6 +4,8 @@ import Prisma from "../db/db.js";
 import { ApiError } from "../utils/ApiError.js";
 
 export const authMiddleware = asyncHandler(async (req, res, next) => {
+  console.log(req.cookies);
+
   try {
     const token =
       req.cookies?.accessToken ||
