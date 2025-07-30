@@ -34,13 +34,13 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
 
   console.log("Creating nodemailer transport with:", {
     host: `mail.${domainName}`,
-    port: 587,
+    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587,
     user: fullEmail,
   });
 
   return nodemailer.createTransport({
     host: `mail.${domainName}`,
-    port: 587,
+    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587,
     secure: false,
     auth: {
       user: fullEmail,
