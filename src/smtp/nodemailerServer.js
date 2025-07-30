@@ -1,6 +1,3 @@
-import nodemailer from "nodemailer";
-import Prisma from "../db/db.js";
-
 export const getMailTransporter = async (address, rawPassword) => {
   const mailbox = await Prisma.mailbox.findFirst({
     where: { address },

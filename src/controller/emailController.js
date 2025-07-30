@@ -7,11 +7,13 @@ import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
+import { decrypt } from "../utils/encryption.js";
 
 const sendEmail = asyncHandler(async (req, res) => {
   const { from, to, subject, body } = req.body;
   const files = req.files || [];
   const senderMailboxId = req.mailbox.id;
+  console.log("senderMailboxId", senderMailboxId);
 
   if (!from || !to || !subject || !body) {
     return ApiError.send(
@@ -39,8 +41,12 @@ const sendEmail = asyncHandler(async (req, res) => {
     );
   }
 
-  // WARNING: Ensure rawPassword is accessible. This must be stored securely or retrieved securely.
-  const rawPassword = fromMailbox.rawPassword; // Make sure this is stored securely!
+  if (!fromMailbox.smtpPasswordEncrypted) {
+    return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
+  }
+
+  const rawPassword = decrypt(fromMailbox.smtpPasswordEncrypted);
+
   if (!rawPassword) {
     return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
   }

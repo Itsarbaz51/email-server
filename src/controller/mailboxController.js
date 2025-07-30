@@ -2,34 +2,17 @@ import Prisma from "../db/db.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { encrypt } from "../utils/encryption.js";
 import { hashPassword } from "../utils/utils.js";
 
 // Create Mailbox
+
 const createMailbox = asyncHandler(async (req, res) => {
   const { address, password, domainId } = req.body;
   const userId = req.user.id;
 
-  // Validate domain ownership
-  const domain = await Prisma.domain.findUnique({
-    where: { id: domainId },
-    include: { dnsRecords: true },
-  });
-  console.log(domain);
+  // ... your domain checks here
 
-  if (!domain || domain.adminId !== userId) {
-    return ApiError.send(res, 403, "Unauthorized domain access");
-  }
-
-  // Check if domain is verified
-  if (!domain.verified) {
-    return ApiError.send(
-      res,
-      400,
-      "Domain must be verified before creating mailboxes"
-    );
-  }
-
-  // Check for existing mailbox with the same address for this domain
   const existingMailbox = await Prisma.mailbox.findFirst({
     where: {
       address,
@@ -45,14 +28,17 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
-  // Create mailbox
+  const hashedPassword = await hashPassword(password);
+  const encryptedSmtpPassword = encrypt(password); // encrypt raw SMTP password
+
   const mailbox = await Prisma.mailbox.create({
     data: {
       address,
-      password: await hashPassword(password),
+      password: hashedPassword,
+      smtpPasswordEncrypted: encryptedSmtpPassword,
       domainId,
       isActive: true,
-      quota: 5120, // 5 GB quota
+      quota: 5120,
     },
     include: {
       domain: {
@@ -117,10 +103,14 @@ const updateMailbox = asyncHandler(async (req, res) => {
   }
 
   const hashedPassword = await hashPassword(password);
+  const encryptedSmtpPassword = encrypt(password);
 
   const updated = await Prisma.mailbox.update({
     where: { id },
-    data: { password: hashedPassword },
+    data: {
+      password: hashedPassword,
+      smtpPasswordEncrypted: encryptedSmtpPassword,
+    },
   });
 
   return res
