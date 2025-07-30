@@ -11,17 +11,22 @@ import {
 } from "../utils/utils.js";
 
 const setAuthCookies = (res, accessToken, refreshToken) => {
-  res.cookie("accessToken", accessToken, {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: isProduction, // use HTTPS in production
+    sameSite: isProduction ? "Strict" : "Lax",
+    path: "/",
+  };
+
+  res.cookie("accessToken", accessToken, {
+    ...cookieOptions,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
   res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    ...cookieOptions,
     maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
   });
 };
@@ -64,27 +69,24 @@ const signupAdmin = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, "Registered successfully", { id: created.id }));
 });
+
 const login = asyncHandler(async (req, res) => {
   let { email, password } = req.body;
 
-  console.log("Login request received:", {
-    email,
-    password: password ? "*****" : null,
-  });
+  console.log("Login request received:", { email });
 
   if (!email || !password) {
     return ApiError.send(res, 400, "Email and password are required");
   }
 
-  // Agar email me domain (@) nahi hai to default domain attach kar do
+  // If no domain is provided, add default domain
   if (!email.includes("@")) {
-    // Default domain aap yahan set kar sakte ho, ya request me bhej sakte ho
     const defaultDomain = "primewebdev.in";
     email = `${email}@${defaultDomain}`;
-    console.log("Email normalized with default domain:", email);
+    console.log("Email normalized:", email);
   }
 
-  // 1. Try logging in as a User (admin/superadmin)
+  // 1. Try logging in as admin/superadmin (User)
   const user = await Prisma.user.findUnique({
     where: { email },
     select: {
@@ -97,7 +99,7 @@ const login = asyncHandler(async (req, res) => {
   });
 
   if (user) {
-    console.log("Found user record:", user.email);
+    console.log("User found:", user.email);
     const isMatch = await comparePassword(password, user.password);
     if (!isMatch) {
       console.log("User password mismatch");
@@ -106,7 +108,6 @@ const login = asyncHandler(async (req, res) => {
 
     const accessToken = generateAccessToken(user.id, user.email, user.role);
     const refreshToken = generateRefreshToken(user.id, user.email, user.role);
-
     setAuthCookies(res, accessToken, refreshToken);
 
     const { password: _, ...userWithoutPassword } = user;
@@ -119,17 +120,12 @@ const login = asyncHandler(async (req, res) => {
     );
   }
 
-  // 2. Try logging in as a Mailbox
+  // 2. Try logging in as mailbox user
   const [localPart, domainPart] = email.split("@");
-
-  console.log("Looking up mailbox:", { localPart, domainPart });
-
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
       address: localPart,
-      domain: {
-        name: domainPart,
-      },
+      domain: { name: domainPart },
     },
     select: {
       id: true,
@@ -142,13 +138,13 @@ const login = asyncHandler(async (req, res) => {
   });
 
   if (!mailbox) {
-    console.log("Mailbox not found for:", email);
+    console.log("Mailbox not found:", email);
     return ApiError.send(res, 404, "User or mailbox not found");
   }
 
   const isMatch = await comparePassword(password, mailbox.password);
   if (!isMatch) {
-    console.log("Mailbox password mismatch for:", email);
+    console.log("Mailbox password mismatch");
     return ApiError.send(res, 401, "Invalid credentials");
   }
 
@@ -158,7 +154,6 @@ const login = asyncHandler(async (req, res) => {
     mailbox.address,
     "USER"
   );
-
   setAuthCookies(res, accessToken, refreshToken);
 
   console.log("Mailbox login successful:", mailbox.address);
