@@ -171,7 +171,7 @@ const login = asyncHandler(async (req, res) => {
 });
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
-  const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
   if (!refreshToken) {
     return ApiError.send(res, 401, "Refresh token missing");
@@ -180,22 +180,38 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
 
-    const user = await Prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: { id: true, email: true },
-    });
+    let newAccessToken;
+    if (decoded.role === "ADMIN" || decoded.role === "SUPERADMIN") {
+      const user = await Prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { id: true, email: true, role: true },
+      });
 
-    if (!user) {
-      return ApiError.send(res, 401, "Invalid refresh token - user not found");
+      if (!user) {
+        return ApiError.send(res, 401, "User not found");
+      }
+
+      newAccessToken = generateAccessToken(user.id, user.email, user.role);
+    } else if (decoded.role === "USER") {
+      const mailbox = await Prisma.mailbox.findUnique({
+        where: { id: decoded.id },
+        select: { id: true, address: true },
+      });
+
+      if (!mailbox) {
+        return ApiError.send(res, 401, "Mailbox not found");
+      }
+
+      newAccessToken = generateAccessToken(mailbox.id, mailbox.address, "USER");
+    } else {
+      return ApiError.send(res, 401, "Invalid refresh token role");
     }
-
-    const newAccessToken = generateAccessToken(user.id, user.email);
 
     res.cookie("accessToken", newAccessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: "Strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     return res.status(200).json(
@@ -205,7 +221,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       })
     );
   } catch (error) {
-    return ApiError.send(res, 401, error?.message || "Invalid refresh token");
+    return ApiError.send(res, 401, "Invalid or expired refresh token");
   }
 });
 
