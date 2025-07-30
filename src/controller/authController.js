@@ -64,12 +64,24 @@ const signupAdmin = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, "Registered successfully", { id: created.id }));
 });
-
 const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  let { email, password } = req.body;
+
+  console.log("Login request received:", {
+    email,
+    password: password ? "*****" : null,
+  });
 
   if (!email || !password) {
     return ApiError.send(res, 400, "Email and password are required");
+  }
+
+  // Agar email me domain (@) nahi hai to default domain attach kar do
+  if (!email.includes("@")) {
+    // Default domain aap yahan set kar sakte ho, ya request me bhej sakte ho
+    const defaultDomain = "primewebdev.in";
+    email = `${email}@${defaultDomain}`;
+    console.log("Email normalized with default domain:", email);
   }
 
   // 1. Try logging in as a User (admin/superadmin)
@@ -85,8 +97,10 @@ const login = asyncHandler(async (req, res) => {
   });
 
   if (user) {
+    console.log("Found user record:", user.email);
     const isMatch = await comparePassword(password, user.password);
     if (!isMatch) {
+      console.log("User password mismatch");
       return ApiError.send(res, 401, "Invalid credentials");
     }
 
@@ -105,9 +119,18 @@ const login = asyncHandler(async (req, res) => {
     );
   }
 
-  // 2. Fallback: Try logging in as a Mailbox
+  // 2. Try logging in as a Mailbox
+  const [localPart, domainPart] = email.split("@");
+
+  console.log("Looking up mailbox:", { localPart, domainPart });
+
   const mailbox = await Prisma.mailbox.findFirst({
-    where: { address: email },
+    where: {
+      address: localPart,
+      domain: {
+        name: domainPart,
+      },
+    },
     select: {
       id: true,
       address: true,
@@ -119,11 +142,13 @@ const login = asyncHandler(async (req, res) => {
   });
 
   if (!mailbox) {
+    console.log("Mailbox not found for:", email);
     return ApiError.send(res, 404, "User or mailbox not found");
   }
 
   const isMatch = await comparePassword(password, mailbox.password);
   if (!isMatch) {
+    console.log("Mailbox password mismatch for:", email);
     return ApiError.send(res, 401, "Invalid credentials");
   }
 
@@ -135,6 +160,8 @@ const login = asyncHandler(async (req, res) => {
   );
 
   setAuthCookies(res, accessToken, refreshToken);
+
+  console.log("Mailbox login successful:", mailbox.address);
 
   return res.status(200).json(
     new ApiResponse(200, "Mailbox login successful", {
