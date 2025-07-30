@@ -11,7 +11,25 @@ const createMailbox = asyncHandler(async (req, res) => {
   const { address, password, domainId } = req.body;
   const userId = req.user.id;
 
-  // ... your domain checks here
+  // Validate domain ownership
+  const domain = await Prisma.domain.findUnique({
+    where: { id: domainId },
+    include: { dnsRecords: true },
+  });
+  console.log(domain);
+
+  if (!domain || domain.adminId !== userId) {
+    return ApiError.send(res, 403, "Unauthorized domain access");
+  }
+
+  // Check if domain is verified
+  if (!domain.verified) {
+    return ApiError.send(
+      res,
+      400,
+      "Domain must be verified before creating mailboxes"
+    );
+  }
 
   const existingMailbox = await Prisma.mailbox.findFirst({
     where: {
