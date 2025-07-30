@@ -101,7 +101,7 @@ const sendEmail = asyncHandler(async (req, res) => {
       attachments,
     };
 
-    console.log("Sending email...");
+    console.log("Sending email...", mailOptions);
     const info = await transporter.sendMail(mailOptions);
     console.log("Email sent:", info);
 
