@@ -6,23 +6,25 @@ import { encrypt } from "../utils/encryption.js";
 import { hashPassword } from "../utils/utils.js";
 
 // Create Mailbox
-
 const createMailbox = asyncHandler(async (req, res) => {
   const { address, password, domainId } = req.body;
   const userId = req.user.id;
+
+  // Normalize address
+  const mailboxAddress = address.includes("@")
+    ? address.split("@")[0]
+    : address;
 
   // Validate domain ownership
   const domain = await Prisma.domain.findUnique({
     where: { id: domainId },
     include: { dnsRecords: true },
   });
-  console.log(domain);
 
   if (!domain || domain.adminId !== userId) {
     return ApiError.send(res, 403, "Unauthorized domain access");
   }
 
-  // Check if domain is verified
   if (!domain.verified) {
     return ApiError.send(
       res,
@@ -31,27 +33,29 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
+  // Check existing mailbox
   const existingMailbox = await Prisma.mailbox.findFirst({
     where: {
-      address,
+      address: mailboxAddress,
       domainId,
     },
   });
 
   if (existingMailbox) {
+    const displayAddress = `${mailboxAddress}@${domain.name}`;
     return ApiError.send(
       res,
       400,
-      `Mailbox "${address}@${domain.name}" already exists.`
+      `Mailbox "${displayAddress}" already exists.`
     );
   }
 
   const hashedPassword = await hashPassword(password);
-  const encryptedSmtpPassword = encrypt(password); // encrypt raw SMTP password
+  const encryptedSmtpPassword = encrypt(password);
 
   const mailbox = await Prisma.mailbox.create({
     data: {
-      address,
+      address: mailboxAddress,
       password: hashedPassword,
       smtpPasswordEncrypted: encryptedSmtpPassword,
       domainId,
