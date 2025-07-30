@@ -10,7 +10,7 @@ const router = Router();
 
 router.post("/register", signupAdmin);
 router.post("/login", login);
-router.post("/refresh-token", refreshAccessToken);
+router.get("/refresh-token", refreshAccessToken);
 router.post("/logout", logout);
 
 export default router;
