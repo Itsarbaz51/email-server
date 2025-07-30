@@ -2,11 +2,8 @@ import jwt from "jsonwebtoken";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Prisma from "../db/db.js";
 import { ApiError } from "../utils/ApiError.js";
-import { comparePassword } from "../utils/utils.js";
 
-const authMiddleware = asyncHandler(async (req, res, next) => {
-  console.log(req.cookies);
-
+export const authMiddleware = asyncHandler(async (req, res, next) => {
   try {
     const token =
       req.cookies?.accessToken ||
@@ -15,11 +12,9 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
     if (!token) {
       return ApiError.send(res, 401, "Authorization token missing");
     }
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, {
-      ignoreExpiration: false,
-    });
 
-    // Check for role: user or mailbox
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+
     if (decoded.role === "ADMIN" || decoded.role === "SUPERADMIN") {
       const user = await Prisma.user.findUnique({
         where: { id: decoded.id },
@@ -58,18 +53,15 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error("Auth middleware error:", error.name, error.message);
+
     if (error.name === "TokenExpiredError") {
       return ApiError.send(res, 401, "Token expired");
     }
     if (error.name === "JsonWebTokenError") {
       return ApiError.send(res, 401, "Invalid token");
     }
-    return ApiError.send(
-      res,
-      401,
-      error?.message + " authMiddleware" || "Authentication failed"
-    );
+
+    return ApiError.send(res, 401, error.message || "Authentication failed");
   }
 });
-
-export { authMiddleware };
