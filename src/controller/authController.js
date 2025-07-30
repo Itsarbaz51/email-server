@@ -15,19 +15,27 @@ const setAuthCookies = (res, accessToken, refreshToken) => {
 
   const cookieOptions = {
     httpOnly: true,
-    secure: isProduction, // use HTTPS in production
-    sameSite: isProduction ? "Strict" : "Lax",
+    secure: isProduction, // Only use HTTPS in production
+    sameSite: "Lax", // "Strict" blocks cookies in Postman or browser cross-origin
     path: "/",
   };
 
+  // Access Token - 7 days
   res.cookie("accessToken", accessToken, {
     ...cookieOptions,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
+  // Refresh Token - 90 days
   res.cookie("refreshToken", refreshToken, {
     ...cookieOptions,
-    maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
+    maxAge: 90 * 24 * 60 * 60 * 1000,
+  });
+
+  console.log("Cookies set:", {
+    accessToken,
+    refreshToken,
+    options: cookieOptions,
   });
 };
 
