@@ -10,12 +10,12 @@ const createMailbox = asyncHandler(async (req, res) => {
   const { address, password, domainId } = req.body;
   const userId = req.user.id;
 
-  // Normalize address
+  // Normalize mailbox address (local-part only)
   const mailboxAddress = address.includes("@")
     ? address.split("@")[0]
     : address;
 
-  // Validate domain ownership
+  // Fetch domain and validate ownership
   const domain = await Prisma.domain.findUnique({
     where: { id: domainId },
     include: { dnsRecords: true },
@@ -25,6 +25,7 @@ const createMailbox = asyncHandler(async (req, res) => {
     return ApiError.send(res, 403, "Unauthorized domain access");
   }
 
+  // Ensure domain is verified
   if (!domain.verified) {
     return ApiError.send(
       res,
@@ -33,7 +34,7 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
-  // Check existing mailbox
+  // Check for existing mailbox
   const existingMailbox = await Prisma.mailbox.findFirst({
     where: {
       address: mailboxAddress,
@@ -42,7 +43,10 @@ const createMailbox = asyncHandler(async (req, res) => {
   });
 
   if (existingMailbox) {
-    const displayAddress = `${mailboxAddress}@${domain.name}`;
+    const displayAddress = address.includes("@")
+      ? address
+      : `${mailboxAddress}@${domain.name}`;
+
     return ApiError.send(
       res,
       400,
@@ -50,9 +54,11 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
+  // Hash and encrypt password
   const hashedPassword = await hashPassword(password);
   const encryptedSmtpPassword = encrypt(password);
 
+  // Create mailbox
   const mailbox = await Prisma.mailbox.create({
     data: {
       address: mailboxAddress,
@@ -60,7 +66,7 @@ const createMailbox = asyncHandler(async (req, res) => {
       smtpPasswordEncrypted: encryptedSmtpPassword,
       domainId,
       isActive: true,
-      quota: 5120,
+      quota: 5120, // default quota in MB
     },
     include: {
       domain: {
@@ -72,6 +78,7 @@ const createMailbox = asyncHandler(async (req, res) => {
     },
   });
 
+  // Return success with IMAP/SMTP info
   return res.status(201).json(
     new ApiResponse(201, "Mailbox created with automatic routing", {
       mailbox,
