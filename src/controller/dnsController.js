@@ -77,7 +77,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "@",
-      value: "v=spf1 a mx include:mail.primewebdev.in ~all",
+      value: "v=spf1 a mx a:mail.primewebdev.in ~all",
       domainId: newDomain.id,
     },
     {
