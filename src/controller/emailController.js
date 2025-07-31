@@ -176,6 +176,8 @@ const sendEmail = asyncHandler(async (req, res) => {
 const getMessages = asyncHandler(async (req, res) => {
   const { mailboxId } = req.params;
   const userId = req.user.id;
+  console.log("mailbox", mailbox);
+  console.log("userId", userId);
 
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
