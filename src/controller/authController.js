@@ -11,7 +11,7 @@ import {
 } from "../utils/utils.js";
 
 const setAuthCookies = (res, accessToken, refreshToken) => {
-  const isProduction = process.env.NODE_ENV !== "production";
+  const isProduction = process.env.NODE_ENV == "production";
 
   const cookieOptions = {
     httpOnly: true,
