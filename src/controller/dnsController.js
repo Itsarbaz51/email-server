@@ -6,6 +6,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 
 const DKIM_SELECTOR = "dkim";
+const SERVER_IP = "13.203.241.137"; // ✅ Replace with your actual mail server IP
 
 const generateDKIMKeys = () => {
   const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
@@ -68,6 +69,12 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
 
   const recordsToCreate = [
     {
+      type: "A",
+      name: "mail",
+      value: SERVER_IP,
+      domainId: newDomain.id,
+    },
+    {
       type: "MX",
       name: "@",
       value: "mail.primewebdev.in",
@@ -77,19 +84,19 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "@",
-      value: "v=spf1 a mx a:mail.primewebdev.in ~all",
+      value: `v=spf1 a mx ip4:${SERVER_IP} ~all`,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: `${DKIM_SELECTOR}._domainkey`,
-      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey}`,
+      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey.replace(/\n/g, "")}`,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: "_dmarc",
-      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`,
+      value: `v=DMARC1; p=quarantine; sp=quarantine; adkim=s; aspf=s; rua=mailto:dmarc@${domain}`,
       domainId: newDomain.id,
     },
   ];
@@ -114,9 +121,6 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
 });
 
 const verifyDNSRecord = async (domainId, recordType) => {
-  console.log("recordType", recordType);
-  console.log("domainId", domainId);
-
   const domain = await Prisma.domain.findUnique({
     where: { id: domainId },
     include: {
@@ -125,9 +129,6 @@ const verifyDNSRecord = async (domainId, recordType) => {
       },
     },
   });
-
-  console.log('domain', domain);
-  
 
   if (!domain) throw new ApiError("Domain not found", 404);
   if (!domain.dnsRecords.length)
@@ -159,7 +160,6 @@ const verifyDNSRecord = async (domainId, recordType) => {
         return r === expected;
       });
 
-      // Optional: Auto-update if mismatch (careful in prod!)
       if (!matched && rawRecords.length > 0) {
         await Prisma.dnsRecord.update({
           where: { id: record.id },
@@ -213,19 +213,15 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
     const allResults = await Promise.all(
       types.map((t) => verifyDNSRecord(domainId, t))
     );
-    console.log("allResults", allResults);
 
     const flatResults = allResults.flat();
-    console.log("flatResults", flatResults);
     const allVerified = flatResults.every((r) => r.matched);
-    console.log("allVerified", allVerified);
 
     const domain = await Prisma.domain.update({
       where: { id: domainId },
       data: { verified: allVerified },
       select: { name: true, verified: true },
     });
-    console.log("domain", domain);
 
     return res.json(
       new ApiResponse(
