@@ -20,6 +20,10 @@ const createMailbox = asyncHandler(async (req, res) => {
     where: { id: domainId },
     include: { dnsRecords: true },
   });
+  console.log('address, password, domainId', address, password, domainId);
+  console.log('domain', domain);
+  console.log('userId', userId);
+  
 
   if (!domain || domain.adminId !== userId) {
     return ApiError.send(res, 403, "Unauthorized domain access");
