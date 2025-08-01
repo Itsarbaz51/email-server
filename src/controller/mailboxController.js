@@ -10,20 +10,32 @@ const createMailbox = asyncHandler(async (req, res) => {
   const { address, password, domainId } = req.body;
   const userId = req.user.id;
 
+  if (!address || !password || !domainId) {
+    return ApiError.send(
+      res,
+      400,
+      "Address, password, and domainId are required"
+    );
+  }
+
   // Normalize mailbox address (local-part only)
   const mailboxAddress = address.includes("@")
     ? address.split("@")[0]
     : address;
+
+  // Validate mailbox address format
+  if (!/^[a-zA-Z0-9._%+-]+$/.test(mailboxAddress)) {
+    return ApiError.send(res, 400, "Invalid mailbox address format");
+  }
 
   // Fetch domain and validate ownership
   const domain = await Prisma.domain.findUnique({
     where: { id: domainId },
     include: { dnsRecords: true },
   });
-  console.log('address, password, domainId', address, password, domainId);
-  console.log('domain', domain);
-  console.log('userId', userId);
-  
+
+  console.log("Creating mailbox:", { address, domainId, userId });
+  console.log("Domain found:", domain);
 
   if (!domain || domain.adminId !== userId) {
     return ApiError.send(res, 403, "Unauthorized domain access");
@@ -47,10 +59,7 @@ const createMailbox = asyncHandler(async (req, res) => {
   });
 
   if (existingMailbox) {
-    const displayAddress = address.includes("@")
-      ? address
-      : `${mailboxAddress}@${domain.name}`;
-
+    const displayAddress = `${mailboxAddress}@${domain.name}`;
     return ApiError.send(
       res,
       400,
@@ -82,13 +91,22 @@ const createMailbox = asyncHandler(async (req, res) => {
     },
   });
 
-  // Return success with IMAP/SMTP info
+  console.log("Mailbox created successfully:", mailbox.id);
+
+  // Return success with connection info
   return res.status(201).json(
-    new ApiResponse(201, "Mailbox created with automatic routing", {
-      mailbox,
-      imap: `imap.${domain.name}:993`,
-      smtp: `smtp.${domain.name}:587`,
-      webmail: `https://webmail.${domain.name}`,
+    new ApiResponse(201, "Mailbox created successfully", {
+      mailbox: {
+        id: mailbox.id,
+        address: mailbox.address,
+        domain: mailbox.domain.name,
+        fullEmail: `${mailbox.address}@${mailbox.domain.name}`,
+      },
+      connection: {
+        imap: `imap.${domain.name}:993`,
+        smtp: `smtp.${domain.name}:587`,
+        webmail: `https://webmail.${domain.name}`,
+      },
     })
   );
 });
@@ -109,13 +127,33 @@ const getMailboxes = asyncHandler(async (req, res) => {
       },
     },
     include: {
-      domain: true,
+      domain: {
+        select: {
+          name: true,
+          verified: true,
+        },
+      },
+      messages: {
+        select: {
+          id: true,
+        },
+      },
     },
   });
 
+  // Add full email addresses and message counts
+  const mailboxesWithStats = mailboxes.map((mailbox) => ({
+    ...mailbox,
+    fullEmail: `${mailbox.address}@${mailbox.domain.name}`,
+    messageCount: mailbox.messages.length,
+    messages: undefined, // Remove messages array from response
+  }));
+
   return res
     .status(200)
-    .json(new ApiResponse(200, "Mailboxes fetched", mailboxes));
+    .json(
+      new ApiResponse(200, "Mailboxes fetched successfully", mailboxesWithStats)
+    );
 });
 
 // Update mailbox password
@@ -123,6 +161,10 @@ const updateMailbox = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { password } = req.body;
   const userId = req.user.id;
+
+  if (!password) {
+    return ApiError.send(res, 400, "Password is required");
+  }
 
   const mailbox = await Prisma.mailbox.findUnique({
     where: { id },
@@ -144,11 +186,22 @@ const updateMailbox = asyncHandler(async (req, res) => {
       password: hashedPassword,
       smtpPasswordEncrypted: encryptedSmtpPassword,
     },
+    include: {
+      domain: {
+        select: {
+          name: true,
+        },
+      },
+    },
   });
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, "Mailbox password updated", updated));
+  return res.status(200).json(
+    new ApiResponse(200, "Mailbox password updated successfully", {
+      id: updated.id,
+      address: updated.address,
+      fullEmail: `${updated.address}@${updated.domain.name}`,
+    })
+  );
 });
 
 // Delete mailbox
@@ -165,6 +218,12 @@ const deleteMailbox = asyncHandler(async (req, res) => {
     return ApiError.send(res, 403, "Unauthorized to delete mailbox.");
   }
 
+  // Delete associated messages first
+  await Prisma.message.deleteMany({
+    where: { mailboxId: id },
+  });
+
+  // Delete the mailbox
   await Prisma.mailbox.delete({ where: { id } });
 
   return res

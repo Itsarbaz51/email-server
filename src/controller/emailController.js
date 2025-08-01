@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
+
 const sendEmail = asyncHandler(async (req, res) => {
   console.log("sendEmail called with:", req.body);
 
@@ -28,12 +29,22 @@ const sendEmail = asyncHandler(async (req, res) => {
     return ApiError.send(res, 403, "Sender mailbox not identified.");
   }
 
-  const fromUser = from.split("@")[0];
+  // Extract local part from sender email
+  const [fromUser, fromDomain] = from.split("@");
 
+  if (!fromUser || !fromDomain) {
+    return ApiError.send(res, 400, "Invalid sender email format.");
+  }
+
+  // Find sender mailbox with domain verification
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
       address: fromUser,
+      domain: {
+        name: fromDomain,
+        verified: true, // Only allow verified domains
+      },
     },
     include: {
       domain: true,
@@ -42,13 +53,9 @@ const sendEmail = asyncHandler(async (req, res) => {
 
   console.log("fromMailbox fetched:", fromMailbox);
 
-  if (!fromMailbox || !fromMailbox.domain?.verified) {
-    console.log("Unauthorized sender or unverified mailbox");
-    return ApiError.send(
-      res,
-      403,
-      "Unauthorized sender or unverified mailbox."
-    );
+  if (!fromMailbox) {
+    console.log("Unauthorized sender or unverified domain");
+    return ApiError.send(res, 403, "Unauthorized sender or unverified domain.");
   }
 
   if (!fromMailbox.smtpPasswordEncrypted) {
@@ -82,8 +89,9 @@ const sendEmail = asyncHandler(async (req, res) => {
     }
   }
 
-  const recipientDomain = to.split("@")[1];
-  if (!recipientDomain) {
+  // Validate recipient email format
+  const [toUser, toDomain] = to.split("@");
+  if (!toUser || !toDomain) {
     console.log("Invalid recipient email format");
     return ApiError.send(res, 400, "Invalid recipient email format.");
   }
@@ -91,7 +99,7 @@ const sendEmail = asyncHandler(async (req, res) => {
   try {
     console.log("Creating mail transporter...");
     const transporter = await getMailTransporter(from, rawPassword);
-    console.log("Transporter created:", transporter);
+    console.log("Transporter created successfully");
 
     const mailOptions = {
       from: `"${fromUser}" <${from}>`,
@@ -101,17 +109,16 @@ const sendEmail = asyncHandler(async (req, res) => {
       attachments,
     };
 
-    console.log("Sending email...", mailOptions);
+    console.log("Sending email...", { from, to, subject });
     const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent:", info);
+    console.log("Email sent successfully:", info.messageId);
 
-    const toUser = to.split("@")[0];
-
+    // Check if recipient is a local mailbox
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
         address: toUser,
         domain: {
-          name: recipientDomain,
+          name: toDomain,
           verified: true,
         },
       },
@@ -121,6 +128,8 @@ const sendEmail = asyncHandler(async (req, res) => {
     });
 
     if (toMailbox) {
+      console.log("Storing email for local recipient:", toMailbox.address);
+
       const message = await Prisma.message.create({
         data: {
           from,
@@ -141,15 +150,15 @@ const sendEmail = asyncHandler(async (req, res) => {
         },
       });
 
-      console.log("Email stored locally:", message);
+      console.log("Email stored locally:", message.id);
       return res
         .status(201)
-        .json(new ApiResponse(201, "Email sent and stored", message));
+        .json(new ApiResponse(201, "Email sent and stored locally", message));
     }
 
     console.log("Email sent to external recipient");
     return res.status(201).json(
-      new ApiResponse(201, "Email sent", {
+      new ApiResponse(201, "Email sent successfully", {
         messageId: info.messageId,
         envelope: info.envelope,
       })
@@ -169,22 +178,28 @@ const sendEmail = asyncHandler(async (req, res) => {
       return ApiError.send(res, 500, "Could not connect to SMTP server");
     }
 
+    if (error.code === "EAUTH") {
+      return ApiError.send(res, 401, "SMTP authentication failed");
+    }
+
     return ApiError.send(res, 500, `Failed to send email: ${error.message}`);
   }
 });
 
 const getMessages = asyncHandler(async (req, res) => {
-  console.log("userId", req.mailbox);
+  console.log("getMessages called for mailbox:", req.mailbox);
   const { mailboxId } = req.params;
-  console.log("mailbox", mailboxId);
-  const userId = req.mailbox.id;
+  const userId = req.mailbox?.id;
 
+  if (!userId) {
+    return ApiError.send(res, 401, "Authentication required");
+  }
+
+  // Verify mailbox ownership
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
       id: mailboxId,
-      domain: {
-        adminId: userId,
-      },
+      id: userId, // Ensure user can only access their own mailbox
     },
   });
 
@@ -204,7 +219,7 @@ const getMessages = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Messages retrieved", messages));
+    .json(new ApiResponse(200, "Messages retrieved successfully", messages));
 });
 
 export { sendEmail, getMessages };
