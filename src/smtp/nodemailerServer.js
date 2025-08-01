@@ -33,14 +33,14 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
   const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
 
   console.log("Creating nodemailer transport with:", {
-    host: `mail.${domainName}`,
-    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587,
+    host: process.env.SMTP_HOST || `mail.${domainName}`,
+    port: 587,
     user: fullEmail,
   });
 
   return nodemailer.createTransport({
-    host: `mail.${domainName}`,
-    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587,
+    host: process.env.SMTP_HOST || `mail.${domainName}`,
+    port: 587,
     secure: false,
     auth: {
       user: fullEmail,
