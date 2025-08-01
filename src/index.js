@@ -14,7 +14,7 @@ dotenv.config({ path: "./.env" });
 
     // 2. Start SMTP server (only in dev)
     if (process.env.NODE_ENV !== "production") {
-      const SMTP_PORT = process.env.SMTP_PORT || 2626;
+      const SMTP_PORT = process.env.SMTP_PORT || 25;
       server.listen(SMTP_PORT, "0.0.0.0", () => {
         console.log(`📨 SMTP SERVER RUNNING ON PORT ${SMTP_PORT}`);
       });
