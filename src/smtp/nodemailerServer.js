@@ -40,7 +40,7 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
 
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || `mail.${domainName}`,
-    port: 587,
+    port: parseInt(process.env.SMTP_PORT, 10) ,
     secure: false,
     auth: {
       user: fullEmail,
