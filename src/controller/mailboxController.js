@@ -18,16 +18,6 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
-  // Normalize mailbox address (local-part only)
-  const mailboxAddress = address.includes("@")
-    ? address.split("@")[0]
-    : address;
-
-  // Validate mailbox address format
-  if (!/^[a-zA-Z0-9._%+-]+$/.test(mailboxAddress)) {
-    return ApiError.send(res, 400, "Invalid mailbox address format");
-  }
-
   // Fetch domain and validate ownership
   const domain = await Prisma.domain.findUnique({
     where: { id: domainId },
@@ -50,20 +40,32 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
+  // Create full email address
+  const fullEmail = address.includes("@") 
+    ? address 
+    : `${address}@${domain.name}`;
+
+  // Extract local part for database storage
+  const localPart = fullEmail.split("@")[0];
+
+  // Validate mailbox address format
+  if (!/^[a-zA-Z0-9._%+-]+$/.test(localPart)) {
+    return ApiError.send(res, 400, "Invalid mailbox address format");
+  }
+
   // Check for existing mailbox
   const existingMailbox = await Prisma.mailbox.findFirst({
     where: {
-      address: mailboxAddress,
+      address: localPart,
       domainId,
     },
   });
 
   if (existingMailbox) {
-    const displayAddress = `${mailboxAddress}@${domain.name}`;
     return ApiError.send(
       res,
       400,
-      `Mailbox "${displayAddress}" already exists.`
+      `Mailbox "${fullEmail}" already exists.`
     );
   }
 
@@ -74,7 +76,7 @@ const createMailbox = asyncHandler(async (req, res) => {
   // Create mailbox
   const mailbox = await Prisma.mailbox.create({
     data: {
-      address: mailboxAddress,
+      address: localPart, // Store local part in address field
       password: hashedPassword,
       smtpPasswordEncrypted: encryptedSmtpPassword,
       domainId,
@@ -100,7 +102,7 @@ const createMailbox = asyncHandler(async (req, res) => {
         id: mailbox.id,
         address: mailbox.address,
         domain: mailbox.domain.name,
-        fullEmail: `${mailbox.address}@${mailbox.domain.name}`,
+        fullEmail: fullEmail, // Return the full email address
       },
       connection: {
         imap: `imap.${domain.name}:993`,

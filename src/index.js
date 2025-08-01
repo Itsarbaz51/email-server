@@ -25,10 +25,8 @@ dotenv.config({ path: "./.env" });
     app.listen(PORT, () => {
       console.log(`🚀 HTTP SERVER RUNNING ON http://localhost:${PORT}`);
     });
-
   } catch (error) {
     console.error("❌ SERVER START FAILED:", error);
     process.exit(1);
   }
 })();
-
