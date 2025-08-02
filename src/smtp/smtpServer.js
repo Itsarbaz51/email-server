@@ -3,20 +3,6 @@ import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
 import dns from "dns/promises";
 
-// Utility to extract DKIM public key (p=...) from DNS TXT record
-const extractDkimPublicKey = (txt) => {
-  const flat = (txt || "").replace(/"/g, "").replace(/\s+/g, "").trim();
-  const match = flat.match(/p=([a-zA-Z0-9+/=]+)/);
-  return match?.[1] || "";
-};
-
-// Normalize both keys for case-insensitive, whitespace-insensitive comparison
-const normalizeKey = (key) =>
-  (key || "")
-    .replace(/[\s\n\r]+/g, "")
-    .trim()
-    .toLowerCase();
-
 export const verifyDkimRecord = async (domain) => {
   try {
     const domainInfo = await Prisma.domain.findFirst({
@@ -34,7 +20,7 @@ export const verifyDkimRecord = async (domain) => {
     const txtRecords = await dns.resolveTxt(lookupName);
     const dnsValue = txtRecords.map((r) => r.join("")).join("");
 
-    const actualDnsPublicKey = extractDkimPublicKey(dnsValue);
+    const actualDnsPublicKey = dnsValue;
     const expectedPublicKey = domainInfo.dkimPublicKey;
 
     if (!actualDnsPublicKey || !expectedPublicKey) {
@@ -42,8 +28,7 @@ export const verifyDkimRecord = async (domain) => {
       return false;
     }
 
-    const match =
-      normalizeKey(actualDnsPublicKey) === normalizeKey(expectedPublicKey);
+    const match = actualDnsPublicKey === expectedPublicKey;
 
     console.log("DNS Public Key:", actualDnsPublicKey);
     console.log("Expected Key :", expectedPublicKey);
