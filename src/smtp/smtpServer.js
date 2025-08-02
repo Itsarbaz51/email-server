@@ -30,7 +30,7 @@ export const server = new SMTPServer({
     Prisma.mailbox
       .findFirst({
         where: {
-          fullEmail: to,
+          address: to,
           domain: {
             verified: true,
           },
