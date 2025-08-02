@@ -1,49 +1,7 @@
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
+import { DKIMVerifier } from "mailauth";
 import Prisma from "../db/db.js";
-import dns from "dns/promises";
-
-export const verifyDkimRecord = async (domain) => {
-  try {
-    const domainInfo = await Prisma.domain.findFirst({
-      where: { name: domain, verified: true },
-    });
-
-    if (!domainInfo) {
-      console.warn("❌ Domain not found or not verified:", domain);
-      return false;
-    }
-
-    const selector = domainInfo.dkimSelector || "dkim";
-    const lookupName = `${selector}._domainkey.${domain}`;
-
-    const txtRecords = await dns.resolveTxt(lookupName);
-    const dnsValue = txtRecords.map((r) => r.join("")).join("");
-
-    const actualDnsPublicKey = dnsValue;
-    const expectedPublicKey = domainInfo.dkimPublicKey;
-
-    if (!actualDnsPublicKey || !expectedPublicKey) {
-      console.warn("⚠️ Missing DKIM keys for domain:", domain);
-      return false;
-    }
-
-    const match = actualDnsPublicKey === expectedPublicKey;
-
-    console.log("DNS Public Key:", actualDnsPublicKey);
-    console.log("Expected Key :", expectedPublicKey);
-    console.log("Match:", match);
-
-    if (!match) {
-      console.warn("❌ DKIM public key mismatch for domain:", domain);
-    }
-
-    return match;
-  } catch (err) {
-    console.error("⚠️ DKIM DNS TXT lookup failed:", err.message);
-    return false;
-  }
-};
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -57,7 +15,6 @@ export const server = new SMTPServer({
   onMailFrom(address, session, callback) {
     const mailFrom = address?.address?.toLowerCase?.();
     if (!mailFrom) return callback(new Error("Invalid MAIL FROM address"));
-
     console.log("📨 MAIL FROM:", mailFrom);
     callback();
   },
@@ -71,17 +28,13 @@ export const server = new SMTPServer({
       .findFirst({
         where: {
           address: to,
-          domain: {
-            verified: true,
-          },
+          domain: { verified: true },
         },
       })
       .then((mailbox) => {
-        if (mailbox) {
-          console.log(`✅ RCPT TO accepted: ${to}`);
-        } else {
-          console.log(`📥 RCPT TO unknown (still accepted): ${to}`);
-        }
+        console.log(
+          mailbox ? `✅ RCPT TO accepted: ${to}` : `📥 Unknown RCPT TO: ${to}`
+        );
         callback();
       })
       .catch((err) => {
@@ -90,69 +43,70 @@ export const server = new SMTPServer({
       });
   },
 
-  onData(stream, session, callback) {
+  async onData(stream, session, callback) {
     console.log("📬 Receiving email data...");
 
-    simpleParser(stream, {}, async (err, parsed) => {
-      if (err) {
-        console.error("❌ Mail parsing error:", err.message);
-        stream.resume();
-        return callback(err);
+    try {
+      // 1. Read raw email buffer
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const rawEmail = Buffer.concat(chunks);
+
+      // 2. DKIM Verify
+      const dkim = new DKIMVerifier();
+      const result = await dkim.verify(rawEmail);
+
+      if (!result.signatures?.length) {
+        console.warn("❌ No DKIM signature found");
+        return callback(new Error("No DKIM signature"));
       }
 
-      // ✅ Print the DKIM signature
-      const dkimSignature = parsed.headers.get("dkim-signature");
-      if (dkimSignature) {
-        console.log("✉️ DKIM Signature:", dkimSignature);
-      } else {
-        console.warn("⚠️ No DKIM signature found in headers");
+      const firstSig = result.signatures[0];
+      if (!firstSig.verified) {
+        console.warn("❌ DKIM verification failed:", firstSig.status.message);
+        return callback(new Error("DKIM verification failed"));
       }
 
+      console.log("✅ DKIM verified for:", firstSig.signer);
+      console.log("🔐 Selector:", firstSig.selector);
+
+      // 3. Parse the email
+      const parsed = await simpleParser(rawEmail);
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
+
       if (!to || !to.includes("@")) {
-        stream.resume();
-        return callback(new Error("Invalid 'to' address"));
+        return callback(new Error("Invalid TO address"));
       }
 
       const [_, domain] = to.split("@");
-      const isDkimValid = await verifyDkimRecord(domain);
-      if (!isDkimValid) {
-        console.warn("❌ Email rejected: DKIM validation failed");
-        stream.resume();
-        return callback(new Error("DKIM validation failed"));
+
+      const mailbox = await Prisma.mailbox.findFirst({
+        where: {
+          address: to,
+          domain: { name: domain, verified: true },
+        },
+      });
+
+      if (!mailbox) {
+        console.warn("📭 Mailbox not found for:", to);
       }
 
-      try {
-        const mailbox = await Prisma.mailbox.findFirst({
-          where: {
-            address: to,
-            domain: { name: domain, verified: true },
-          },
-        });
+      await Prisma.message.create({
+        data: {
+          from: parsed.from?.text || "",
+          to,
+          subject: parsed.subject || "",
+          body: parsed.html || parsed.text || "",
+          mailboxId: mailbox?.id ?? null,
+        },
+      });
 
-        if (!mailbox) {
-          console.warn("📭 Mailbox not found for recipient:", to);
-        }
-
-        await Prisma.message.create({
-          data: {
-            from: parsed.from?.text || "",
-            to,
-            subject: parsed.subject || "",
-            body: parsed.html || parsed.text || "",
-            mailboxId: mailbox?.id ?? null,
-          },
-        });
-
-        console.log(`✅ Email stored for: ${to}`);
-        stream.resume();
-        callback();
-      } catch (err) {
-        console.error("❌ Email processing error:", err.message);
-        stream.resume();
-        callback(err);
-      }
-    });
+      console.log(`✅ Email stored for: ${to}`);
+      callback();
+    } catch (err) {
+      console.error("❌ Error processing email:", err.message);
+      callback(err);
+    }
   },
 });
