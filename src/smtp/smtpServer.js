@@ -23,32 +23,21 @@ const verifyDkimRecord = async (domain) => {
     const txtRecords = await dns.resolveTxt(lookupName);
     const flattened = txtRecords.map((r) => r.join("")).join("");
     const actualDnsValue = normalizeTxt(flattened);
-    const expectedPublicKey = normalizeTxt(
-      domainInfo.dnsRecords?.find(
-        (r) => r.name === `${selector}._domainkey` && r.type === "TXT"
-      )?.value || ""
-    );
+    const expectedPublicKey = normalizeTxt(domainInfo.dkimPublicKey || "");
 
     if (!expectedPublicKey) {
-      console.warn(
-        "⚠️ No DKIM public key found in DB for:",
-        domain,
-        expectedPublicKey,
-        domainInfo
-      );
+      console.warn("⚠️ No DKIM public key found in DB for:", domain);
       return false;
     }
 
     const match = actualDnsValue.includes(expectedPublicKey);
     if (!match) {
       console.warn("❌ DKIM public key mismatch for domain:", domain);
-    } else {
-      console.log("✅ DKIM record verified for:", domain);
     }
 
     return match;
   } catch (err) {
-    console.error("⚠️ DKIM TXT lookup failed:", err.message);
+    console.error("⚠️ DKIM DNS TXT lookup failed:", err.message);
     return false;
   }
 };
@@ -65,6 +54,7 @@ export const server = new SMTPServer({
   onMailFrom(address, session, callback) {
     const mailFrom = address?.address?.toLowerCase?.();
     if (!mailFrom) return callback(new Error("Invalid MAIL FROM address"));
+
     console.log("📨 MAIL FROM:", mailFrom);
     callback();
   },
@@ -82,7 +72,6 @@ export const server = new SMTPServer({
             verified: true,
           },
         },
-        include: { domain: true },
       })
       .then((mailbox) => {
         if (mailbox) {
@@ -105,11 +94,16 @@ export const server = new SMTPServer({
 
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
-
       if (!to || !to.includes("@"))
         return callback(new Error("Invalid 'to' address"));
 
       const [_, domain] = to.split("@");
+
+      const isDkimValid = await verifyDkimRecord(domain);
+      if (!isDkimValid) {
+        console.warn("❌ Email rejected: DKIM validation failed");
+        return callback(new Error("DKIM validation failed"));
+      }
 
       try {
         const mailbox = await Prisma.mailbox.findFirst({
@@ -120,20 +114,11 @@ export const server = new SMTPServer({
               verified: true,
             },
           },
-          include: {
-            domain: {
-              include: {
-                dnsRecords: true,
-              },
-            },
-          },
         });
 
         if (!mailbox) {
-          console.warn("📭 Mailbox not found:", to);
+          console.warn("📭 Mailbox not found for recipient:", to);
         }
-
-        await verifyDkimRecord(domain);
 
         await Prisma.message.create({
           data: {
