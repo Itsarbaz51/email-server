@@ -1,6 +1,5 @@
 import { SMTPServer } from "smtp-server";
 import mailauth from "mailauth";
-import mailauth from "mailauth";
 import Prisma from "../db/db.js";
 
 export const server = new SMTPServer({
