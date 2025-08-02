@@ -1,7 +1,6 @@
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
-import { verify } from "mailauth"; // Change this import
-
+import mailauth from "mailauth"; // Changed import style
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -50,8 +49,8 @@ export const server = new SMTPServer({
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // ✅ DKIM Verification using verify() instead of createDKIMVerifier()
-      const result = await verify(rawEmail.toString("utf8")); // Changed this line
+      // ✅ DKIM Verification using mailauth.verify()
+      const result = await mailauth.verify(rawEmail.toString("utf8")); // Changed to use mailauth.verify
       const validSig = result.results?.dkim?.find(
         (sig) => sig.result === "pass"
       );
@@ -64,7 +63,40 @@ export const server = new SMTPServer({
       console.log("✅ DKIM verified for:", validSig.domain);
       console.log("🔐 Selector:", validSig.selector);
 
-      // ... rest of your onData function remains the same ...
+      // Parse the email
+      const parsed = await simpleParser(rawEmail);
+      const toRaw = parsed.to?.value?.[0]?.address;
+      const to = toRaw?.toLowerCase?.();
+
+      if (!to || !to.includes("@")) {
+        return callback(new Error("Invalid TO address"));
+      }
+
+      const [_, domain] = to.split("@");
+
+      const mailbox = await Prisma.mailbox.findFirst({
+        where: {
+          address: to,
+          domain: { name: domain, verified: true },
+        },
+      });
+
+      if (!mailbox) {
+        console.warn("📭 Mailbox not found for:", to);
+      }
+
+      await Prisma.message.create({
+        data: {
+          from: parsed.from?.text || "",
+          to,
+          subject: parsed.subject || "",
+          body: parsed.html || parsed.text || "",
+          mailboxId: mailbox?.id ?? null,
+        },
+      });
+
+      console.log(`✅ Email stored for: ${to}`);
+      callback();
     } catch (err) {
       console.error("❌ Error processing email:", err.message);
       callback(err);
