@@ -61,6 +61,7 @@ export const server = new SMTPServer({
   onConnect(session, callback) {
     console.log("SMTP Connect:", session.id);
     callback();
+    console.log("SMTP Connect Done:", session.id);
   },
 
   onMailFrom(address, session, callback) {
