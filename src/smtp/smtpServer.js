@@ -3,7 +3,7 @@ import { simpleParser } from "mailparser";
 import mailauth from "mailauth";
 import Prisma from "../db/db.js";
 
-const { DKIMVerifier } = mailauth;
+const { verifyDKIM } = mailauth;
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -24,7 +24,7 @@ export const server = new SMTPServer({
   onRcptTo(address, session, callback) {
     const to = address?.address?.toLowerCase?.();
     if (!to || !to.includes("@"))
-      return callback(new Error("Invalid RCPT TO address format"));
+      return callback(new Error("Invalid RCPT TO address"));
 
     Prisma.mailbox
       .findFirst({
@@ -40,7 +40,7 @@ export const server = new SMTPServer({
         callback();
       })
       .catch((err) => {
-        console.error("❌ RCPT TO DB error:", err);
+        console.error("❌ RCPT TO DB error:", err.message);
         callback(err);
       });
   },
@@ -49,30 +49,24 @@ export const server = new SMTPServer({
     console.log("📬 Receiving email data...");
 
     try {
-      // 1. Read raw email buffer
+      // Read full raw email from stream
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // 2. DKIM Verify
-      const dkim = new DKIMVerifier();
-      const result = await dkim.verify(rawEmail);
+      // DKIM Verification
+      const result = await verifyDKIM(rawEmail);
+      const validSig = result.signatures?.find((sig) => sig.verified);
 
-      if (!result.signatures?.length) {
-        console.warn("❌ No DKIM signature found");
-        return callback(new Error("No DKIM signature"));
-      }
-
-      const firstSig = result.signatures[0];
-      if (!firstSig.verified) {
-        console.warn("❌ DKIM verification failed:", firstSig.status.message);
+      if (!validSig) {
+        console.warn("❌ DKIM verification failed");
         return callback(new Error("DKIM verification failed"));
       }
 
-      console.log("✅ DKIM verified for:", firstSig.signer);
-      console.log("🔐 Selector:", firstSig.selector);
+      console.log("✅ DKIM verified for:", validSig.signer);
+      console.log("🔐 Selector:", validSig.selector);
 
-      // 3. Parse the email
+      // 📦 Parse the email
       const parsed = await simpleParser(rawEmail);
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
