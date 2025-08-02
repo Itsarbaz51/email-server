@@ -5,7 +5,7 @@ import { comparePassword } from "../utils/utils.js";
 
 export const server = new SMTPServer({
   authOptional: false, // ✅ Now login is required
-  allowInsecureAuth: true,
+  allowInsecureAuth: false,
   onAuth(auth, session, callback) {
     const { username, password } = auth;
     console.log("SMTP Auth attempt for:", username);

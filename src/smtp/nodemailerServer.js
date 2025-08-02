@@ -63,7 +63,7 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
     },
     dkim: {
       domainName,
-      keySelector: dkimSelector || "dkim",
+      keySelector: "dkim",
       privateKey: dkimPrivateKey,
     },
     tls: {
