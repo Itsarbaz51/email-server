@@ -14,7 +14,7 @@ const extractDkimPublicKey = (txt) => {
   return match?.[1] || "";
 };
 
-// ✅ Verifies DKIM by comparing stored publicKey (not private!) to DNS TXT record
+// Verifies DKIM by comparing stored publicKey (not private!) to DNS TXT record
 const verifyDkimRecord = async (domain) => {
   try {
     const domainInfo = await Prisma.domain.findFirst({
@@ -32,9 +32,8 @@ const verifyDkimRecord = async (domain) => {
     const txtRecords = await dns.resolveTxt(lookupName);
     const dnsValue = txtRecords.map((r) => r.join("")).join("");
     const actualDnsPublicKey = extractDkimPublicKey(dnsValue);
-    const expectedPublicKey = extractDkimPublicKey(
-      domainInfo.dkimPublicKey || ""
-    );
+    const expectedPublicKey = domainInfo.dkimPublicKey;
+
     console.log("actualDnsPublicKey", actualDnsPublicKey);
     console.log("expectedPublicKey", expectedPublicKey);
 
