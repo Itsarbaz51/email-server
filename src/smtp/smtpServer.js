@@ -35,6 +35,8 @@ const verifyDkimRecord = async (domain) => {
     const expectedPublicKey = extractDkimPublicKey(
       domainInfo.dkimPublicKey || ""
     );
+    console.log("actualDnsPublicKey", actualDnsPublicKey);
+    console.log("expectedPublicKey", expectedPublicKey);
 
     if (!expectedPublicKey) {
       console.warn("⚠️ No DKIM public key found in DB for:", domain);
@@ -42,6 +44,7 @@ const verifyDkimRecord = async (domain) => {
     }
 
     const match = actualDnsPublicKey.includes(expectedPublicKey);
+    console.log("match", match);
 
     if (!match) {
       console.warn("❌ DKIM public key mismatch for domain:", domain);
