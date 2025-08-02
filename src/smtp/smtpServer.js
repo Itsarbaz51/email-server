@@ -3,7 +3,6 @@ import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
 import dns from "dns/promises";
 
-// Safe normalize function
 const normalizeTxt = (txt) =>
   (txt || "").replace(/"/g, "").replace(/\s+/g, "").trim().toLowerCase();
 
@@ -25,21 +24,26 @@ const verifyDkimRecord = async (domain) => {
     const flattened = txtRecords.map((r) => r.join("")).join("");
     const actualDnsValue = normalizeTxt(flattened);
     const expectedPublicKey = normalizeTxt(
-      domainInfo.dkimPublicKey || domainInfo.dkimPublic || ""
+      domainInfo.dnsRecords?.find(
+        (r) => r.name === `${selector}._domainkey` && r.type === "TXT"
+      )?.value || ""
     );
 
     if (!expectedPublicKey) {
-      console.warn("⚠️ No stored DKIM public key for:", domain);
+      console.warn("⚠️ No DKIM public key found in DB for:", domain);
       return false;
     }
 
     const match = actualDnsValue.includes(expectedPublicKey);
     if (!match) {
       console.warn("❌ DKIM public key mismatch for domain:", domain);
+    } else {
+      console.log("✅ DKIM record verified for:", domain);
     }
+
     return match;
   } catch (err) {
-    console.error("⚠️ DKIM DNS TXT lookup failed:", err.message);
+    console.error("⚠️ DKIM TXT lookup failed:", err.message);
     return false;
   }
 };
@@ -56,7 +60,6 @@ export const server = new SMTPServer({
   onMailFrom(address, session, callback) {
     const mailFrom = address?.address?.toLowerCase?.();
     if (!mailFrom) return callback(new Error("Invalid MAIL FROM address"));
-
     console.log("📨 MAIL FROM:", mailFrom);
     callback();
   },
@@ -74,6 +77,7 @@ export const server = new SMTPServer({
             verified: true,
           },
         },
+        include: { domain: true },
       })
       .then((mailbox) => {
         if (mailbox) {
@@ -111,9 +115,20 @@ export const server = new SMTPServer({
               verified: true,
             },
           },
+          include: {
+            domain: {
+              include: {
+                dnsRecords: true,
+              },
+            },
+          },
         });
 
-        const dkimValid = await verifyDkimRecord(domain);
+        if (!mailbox) {
+          console.warn("📭 Mailbox not found:", to);
+        }
+
+        await verifyDkimRecord(domain);
 
         await Prisma.message.create({
           data: {
@@ -121,7 +136,6 @@ export const server = new SMTPServer({
             to,
             subject: parsed.subject || "",
             body: parsed.html || parsed.text || "",
-            dkimVerified: dkimValid,
             mailboxId: mailbox?.id ?? null,
           },
         });
