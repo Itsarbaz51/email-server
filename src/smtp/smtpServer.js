@@ -1,11 +1,12 @@
-import { SMTPServer } from "smtp-server";
+import { simpleParser } from "mailparser";
 import mailauth from "mailauth";
 import Prisma from "../db/db.js";
+
+const { DKIMVerifier } = mailauth;
 
 export const server = new SMTPServer({
   authOptional: true,
   allowInsecureAuth: false,
-
   onConnect(session, callback) {
     console.log("📡 SMTP Connect:", session.id);
     callback();
@@ -46,13 +47,13 @@ export const server = new SMTPServer({
     console.log("📬 Receiving email data...");
 
     try {
-      // Read full raw email from stream
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // DKIM Verification
-      const result = await mailauth.verifyDKIM(rawEmail);
+      // ✅ DKIM Verification using DKIMVerifier
+      const dkim = new DKIMVerifier();
+      const result = await dkim.verify(rawEmail);
       const validSig = result.signatures?.find((sig) => sig.verified);
 
       if (!validSig) {
