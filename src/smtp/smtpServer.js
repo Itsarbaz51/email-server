@@ -5,19 +5,22 @@ import { comparePassword } from "../utils/utils.js";
 
 export const server = new SMTPServer({
   authOptional: true, // ✅ Gmail needs this
-  allowInsecureAuth: false, // fine
+  allowInsecureAuth: false,
+
   onConnect(session, callback) {
     console.log("SMTP Connect:", session.id);
     callback();
   },
-  onMailFrom(address, session, callback) {
-    console.log("SMTP MailFrom:", address.address, session.id);
 
-    // ✅ Allow Gmail to send without session.mailbox
+  onMailFrom(address, session, callback) {
+    console.log("SMTP MailFrom:", address.address.toLowerCase(), session.id); // Lowercased
     callback();
   },
+
   onRcptTo(address, session, callback) {
-    const [recipientLocal, recipientDomain] = address.address.split("@");
+    const lowerAddress = address.address.toLowerCase(); // Lowercase the full address
+    const [recipientLocal, recipientDomain] = lowerAddress.split("@");
+
     Prisma.mailbox
       .findFirst({
         where: {
@@ -30,11 +33,11 @@ export const server = new SMTPServer({
       })
       .then((mailbox) => {
         if (mailbox) {
-          console.log("Accepted recipient:", address.address);
+          console.log("Accepted recipient:", lowerAddress);
         } else {
           console.log(
             "Recipient not found (but still accepted):",
-            address.address
+            lowerAddress
           );
         }
         callback();
@@ -44,36 +47,44 @@ export const server = new SMTPServer({
         callback(err);
       });
   },
+
   onData(stream, session, callback) {
     console.log("SMTP Data received");
     simpleParser(stream, {}, async (err, parsed) => {
       if (err) return callback(err);
-      const to = parsed.to?.value?.[0]?.address;
+
+      const toRaw = parsed.to?.value?.[0]?.address || "";
+      const to = toRaw.toLowerCase(); // ✅ Force lowercase
       const [recipientLocal, recipientDomain] = to.split("@");
 
-      const mailbox = await Prisma.mailbox.findFirst({
-        where: {
-          address: recipientLocal,
-          domain: { name: recipientDomain, verified: true },
-        },
-      });
-
-      if (mailbox) {
-        await Prisma.message.create({
-          data: {
-            from: parsed.from?.text,
-            to,
-            subject: parsed.subject || "",
-            body: parsed.html || parsed.text || "",
-            mailboxId: mailbox.id,
+      try {
+        const mailbox = await Prisma.mailbox.findFirst({
+          where: {
+            address: recipientLocal,
+            domain: { name: recipientDomain, verified: true },
           },
         });
-        console.log("✅ Stored email to:", to);
-      } else {
-        console.log("📭 Email for unknown mailbox:", to);
-      }
 
-      callback();
+        if (mailbox) {
+          await Prisma.message.create({
+            data: {
+              from: parsed.from?.text || "",
+              to,
+              subject: parsed.subject || "",
+              body: parsed.html || parsed.text || "",
+              mailboxId: mailbox.id,
+            },
+          });
+          console.log("✅ Stored email to:", to);
+        } else {
+          console.log("📭 Email for unknown mailbox:", to);
+        }
+
+        callback();
+      } catch (err) {
+        console.error("Email processing error:", err);
+        callback(err);
+      }
     });
   },
 });
