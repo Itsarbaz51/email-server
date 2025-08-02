@@ -1,8 +1,6 @@
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
-import pkg from "mailauth";
-const { dkimVerify } = pkg;
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -58,22 +56,6 @@ export const server = new SMTPServer({
 
       if (!to || !to.includes("@")) {
         return callback(new Error("Invalid TO address"));
-      }
-
-      // Optional DKIM Verification - don't block if it fails
-      try {
-        const result = await dkimVerify(rawEmail.toString("utf8"));
-        const validSig = result.results.find((sig) => sig.status === "pass");
-
-        if (validSig) {
-          console.log("✅ DKIM verified for:", validSig.domain);
-          console.log("🔐 Selector:", validSig.selector);
-        } else {
-          console.warn("⚠️ DKIM verification failed, but continuing...");
-        }
-      } catch (dkimError) {
-        console.warn("⚠️ DKIM verification error:", dkimError.message);
-        // Continue processing even if DKIM fails
       }
 
       const [_, domain] = to.split("@");
