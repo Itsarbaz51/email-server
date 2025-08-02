@@ -77,7 +77,6 @@ const signupAdmin = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, "Registered successfully", { id: created.id }));
 });
-
 const login = asyncHandler(async (req, res) => {
   let { email, password } = req.body;
 
@@ -87,7 +86,7 @@ const login = asyncHandler(async (req, res) => {
     return ApiError.send(res, 400, "Email and password are required");
   }
 
-  // If no domain is provided, add default domain
+  // Normalize email if it's missing @domain
   if (!email.includes("@")) {
     const defaultDomain = "primewebdev.in";
     email = `${email}@${defaultDomain}`;
@@ -128,12 +127,10 @@ const login = asyncHandler(async (req, res) => {
     );
   }
 
-  // 2. Try logging in as mailbox user
-  const [localPart, domainPart] = email.split("@");
+  // 2. Try logging in as mailbox user by full email
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
-      address: localPart,
-      domain: { name: domainPart },
+      fullAddress: email.toLowerCase(), // must match the DB logic
     },
     select: {
       id: true,
