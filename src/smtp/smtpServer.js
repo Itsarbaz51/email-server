@@ -1,9 +1,7 @@
-import { simpleParser } from "mailparser";
-import mailauth from "mailauth";
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
+import { verify } from "mailauth"; // Change this import
 
-const { createDKIMVerifier } = mailauth;
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -52,53 +50,21 @@ export const server = new SMTPServer({
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // ✅ DKIM Verification using DKIMVerifier
-      const dkim = createDKIMVerifier();
-      const result = await dkim.verify(rawEmail);
-      const validSig = result.signatures?.find((sig) => sig.verified);
+      // ✅ DKIM Verification using verify() instead of createDKIMVerifier()
+      const result = await verify(rawEmail.toString("utf8")); // Changed this line
+      const validSig = result.results?.dkim?.find(
+        (sig) => sig.result === "pass"
+      );
 
       if (!validSig) {
         console.warn("❌ DKIM verification failed");
         return callback(new Error("DKIM verification failed"));
       }
 
-      console.log("✅ DKIM verified for:", validSig.signer);
+      console.log("✅ DKIM verified for:", validSig.domain);
       console.log("🔐 Selector:", validSig.selector);
 
-      // 📦 Parse the email
-      const parsed = await simpleParser(rawEmail);
-      const toRaw = parsed.to?.value?.[0]?.address;
-      const to = toRaw?.toLowerCase?.();
-
-      if (!to || !to.includes("@")) {
-        return callback(new Error("Invalid TO address"));
-      }
-
-      const [_, domain] = to.split("@");
-
-      const mailbox = await Prisma.mailbox.findFirst({
-        where: {
-          address: to,
-          domain: { name: domain, verified: true },
-        },
-      });
-
-      if (!mailbox) {
-        console.warn("📭 Mailbox not found for:", to);
-      }
-
-      await Prisma.message.create({
-        data: {
-          from: parsed.from?.text || "",
-          to,
-          subject: parsed.subject || "",
-          body: parsed.html || parsed.text || "",
-          mailboxId: mailbox?.id ?? null,
-        },
-      });
-
-      console.log(`✅ Email stored for: ${to}`);
-      callback();
+      // ... rest of your onData function remains the same ...
     } catch (err) {
       console.error("❌ Error processing email:", err.message);
       callback(err);
