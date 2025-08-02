@@ -130,7 +130,7 @@ const login = asyncHandler(async (req, res) => {
   // 2. Try logging in as mailbox user by full email
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
-      fullAddress: email.toLowerCase(), // must match the DB logic
+      address: email.toLowerCase(), // must match the DB logic
     },
     select: {
       id: true,
