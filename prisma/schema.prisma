@@ -51,7 +51,7 @@ model DnsRecord {
 
 model Mailbox {
   id                    String    @id @default(uuid())
-  address               String    @unique 
+  address               String    @unique
   password              String
   smtpPasswordEncrypted String?
   domainId              String
@@ -67,8 +67,8 @@ model Mailbox {
 
 model Message {
   id          String       @id @default(uuid())
-  subject     String
-  body        String
+  subject     String       @db.LongText
+  body        String       @db.LongText
   from        String
   to          String
   mailboxId   String

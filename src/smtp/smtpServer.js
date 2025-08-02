@@ -1,7 +1,6 @@
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
-import { comparePassword } from "../utils/utils.js";
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -23,39 +22,30 @@ export const server = new SMTPServer({
   },
 
   onRcptTo(address, session, callback) {
-    const lowerAddress = address?.address?.toLowerCase?.();
-    if (!lowerAddress) {
-      return callback(new Error("Invalid RCPT TO address"));
-    }
-
-    const [recipientLocal, recipientDomain] = lowerAddress.split("@");
-    if (!recipientLocal || !recipientDomain) {
-      return callback(new Error("Invalid recipient format"));
+    const to = address?.address?.toLowerCase?.();
+    if (!to || !to.includes("@")) {
+      return callback(new Error("Invalid RCPT TO address format"));
     }
 
     Prisma.mailbox
       .findFirst({
         where: {
-          address: recipientLocal,
+          fullEmail: to,
           domain: {
-            name: recipientDomain,
             verified: true,
           },
         },
       })
       .then((mailbox) => {
         if (mailbox) {
-          console.log("Accepted recipient:", lowerAddress);
+          console.log(`✅ RCPT TO accepted: ${to}`);
         } else {
-          console.log(
-            "Recipient not found (but still accepted):",
-            lowerAddress
-          );
+          console.log(`📥 RCPT TO unknown (still accepted): ${to}`);
         }
         callback();
       })
       .catch((err) => {
-        console.error("RcptTo error:", err);
+        console.error("❌ RCPT TO DB error:", err);
         callback(err);
       });
   },
