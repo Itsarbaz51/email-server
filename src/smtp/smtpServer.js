@@ -3,9 +3,18 @@ import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
 import dns from "dns/promises";
 
-const normalizeTxt = (txt) =>
-  (txt || "").replace(/"/g, "").replace(/\s+/g, "").trim().toLowerCase();
+// Utility to normalize and extract p= DKIM public key from DNS
+const extractDkimPublicKey = (txt) => {
+  const flattened = (txt || "")
+    .replace(/"/g, "")
+    .replace(/\s+/g, "")
+    .trim()
+    .toLowerCase();
+  const match = flattened.match(/p=([a-z0-9+/=]+)/i);
+  return match?.[1] || "";
+};
 
+// ✅ Verifies DKIM by comparing stored publicKey (not private!) to DNS TXT record
 const verifyDkimRecord = async (domain) => {
   try {
     const domainInfo = await Prisma.domain.findFirst({
@@ -21,26 +30,23 @@ const verifyDkimRecord = async (domain) => {
     const lookupName = `${selector}._domainkey.${domain}`;
 
     const txtRecords = await dns.resolveTxt(lookupName);
-    const flattened = txtRecords.map((r) => r.join("")).join("");
-    const actualDnsValue = normalizeTxt(flattened);
-    const expectedPublicKey = normalizeTxt(domainInfo.dkimPrivateKey || "");
+    const dnsValue = txtRecords.map((r) => r.join("")).join("");
+    const actualDnsPublicKey = extractDkimPublicKey(dnsValue);
+    const expectedPublicKey = extractDkimPublicKey(
+      domainInfo.dkimPublicKey || ""
+    );
 
     if (!expectedPublicKey) {
       console.warn("⚠️ No DKIM public key found in DB for:", domain);
       return false;
     }
-    console.log('expectedPublicKey', expectedPublicKey);
-    console.log('actualDnsValue', actualDnsValue);
-    
 
-    const match = actualDnsValue.includes(expectedPublicKey);
+    const match = actualDnsPublicKey.includes(expectedPublicKey);
+
     if (!match) {
-      console.warn(
-        "❌ DKIM public key mismatch for domain:",
-        domain,
-        actualDnsValue,
-        expectedPublicKey
-      );
+      console.warn("❌ DKIM public key mismatch for domain:", domain);
+      console.log("DNS Public Key:", actualDnsPublicKey);
+      console.log("Expected Key :", expectedPublicKey);
     }
 
     return match;
