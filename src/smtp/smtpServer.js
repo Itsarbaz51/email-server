@@ -3,7 +3,7 @@ import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
 import dns from "dns/promises";
 
-// Utility to normalize and extract p= DKIM public key from DNS
+// Utility to normalize and extract p= DKIM public key from DNS TXT record
 const extractDkimPublicKey = (txt) => {
   const flattened = (txt || "")
     .replace(/"/g, "")
@@ -14,8 +14,14 @@ const extractDkimPublicKey = (txt) => {
   return match?.[1] || "";
 };
 
-// Verifies DKIM by comparing stored publicKey (not private!) to DNS TXT record
-const verifyDkimRecord = async (domain) => {
+// Utility to normalize both public keys
+const normalizeKey = (key) =>
+  (key || "")
+    .replace(/[\s\n\r]+/g, "")
+    .trim()
+    .toLowerCase();
+
+export const verifyDkimRecord = async (domain) => {
   try {
     const domainInfo = await Prisma.domain.findFirst({
       where: { name: domain, verified: true },
@@ -31,18 +37,20 @@ const verifyDkimRecord = async (domain) => {
 
     const txtRecords = await dns.resolveTxt(lookupName);
     const dnsValue = txtRecords.map((r) => r.join("")).join("");
+
     const actualDnsPublicKey = extractDkimPublicKey(dnsValue);
     const expectedPublicKey = domainInfo.dkimPublicKey;
 
-    console.log("actualDnsPublicKey", actualDnsPublicKey);
-    console.log("expectedPublicKey", expectedPublicKey);
-
-    if (!expectedPublicKey) {
-      console.warn("⚠️ No DKIM public key found in DB for:", domain);
+    if (!actualDnsPublicKey || !expectedPublicKey) {
+      console.warn("⚠️ Missing DKIM keys for domain:", domain);
       return false;
     }
 
-    const match = actualDnsPublicKey.includes(expectedPublicKey);
+    const match =
+      normalizeKey(actualDnsPublicKey) === normalizeKey(expectedPublicKey);
+
+    console.log("actualDnsPublicKey", actualDnsPublicKey);
+    console.log("expectedPublicKey", expectedPublicKey);
     console.log("match", match);
 
     if (!match) {
