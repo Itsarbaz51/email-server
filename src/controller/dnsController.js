@@ -6,7 +6,6 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 
 const DKIM_SELECTOR = "dkim";
-const SERVER_IP = "13.203.241.137"; // ✅ Replace with your actual mail server IP
 
 const generateDKIMKeys = () => {
   const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
@@ -84,7 +83,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "@",
-      value: `v=spf1 a mx ip4:${SERVER_IP} ~all`,
+      value: `v=spf1 a:mail.primewebdev.in mx ~all`,
       domainId: newDomain.id,
     },
     {
