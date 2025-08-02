@@ -92,19 +92,34 @@ export const server = new SMTPServer({
 
   onData(stream, session, callback) {
     console.log("📬 Receiving email data...");
+
     simpleParser(stream, {}, async (err, parsed) => {
-      if (err) return callback(err);
+      if (err) {
+        console.error("❌ Mail parsing error:", err.message);
+        stream.resume();
+        return callback(err);
+      }
+
+      // ✅ Print the DKIM signature
+      const dkimSignature = parsed.headers.get("dkim-signature");
+      if (dkimSignature) {
+        console.log("✉️ DKIM Signature:", dkimSignature);
+      } else {
+        console.warn("⚠️ No DKIM signature found in headers");
+      }
 
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
-      if (!to || !to.includes("@"))
+      if (!to || !to.includes("@")) {
+        stream.resume();
         return callback(new Error("Invalid 'to' address"));
+      }
 
       const [_, domain] = to.split("@");
-
       const isDkimValid = await verifyDkimRecord(domain);
       if (!isDkimValid) {
         console.warn("❌ Email rejected: DKIM validation failed");
+        stream.resume();
         return callback(new Error("DKIM validation failed"));
       }
 
@@ -112,10 +127,7 @@ export const server = new SMTPServer({
         const mailbox = await Prisma.mailbox.findFirst({
           where: {
             address: to,
-            domain: {
-              name: domain,
-              verified: true,
-            },
+            domain: { name: domain, verified: true },
           },
         });
 
@@ -134,9 +146,11 @@ export const server = new SMTPServer({
         });
 
         console.log(`✅ Email stored for: ${to}`);
+        stream.resume();
         callback();
       } catch (err) {
-        console.error("❌ Email processing error:", err);
+        console.error("❌ Email processing error:", err.message);
+        stream.resume();
         callback(err);
       }
     });
