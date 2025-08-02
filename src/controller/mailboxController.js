@@ -24,14 +24,10 @@ const createMailbox = asyncHandler(async (req, res) => {
     include: { dnsRecords: true },
   });
 
-  console.log("Creating mailbox:", { address, domainId, userId });
-  console.log("Domain found:", domain);
-
   if (!domain || domain.adminId !== userId) {
     return ApiError.send(res, 403, "Unauthorized domain access");
   }
 
-  // Ensure domain is verified
   if (!domain.verified) {
     return ApiError.send(
       res,
@@ -40,15 +36,13 @@ const createMailbox = asyncHandler(async (req, res) => {
     );
   }
 
-  // Create full email address
-  const fullEmail = address.includes("@") 
-    ? address 
-    : `${address}@${domain.name}`;
+  // Normalize full email
+  const fullEmail = address.includes("@")
+    ? address.toLowerCase()
+    : `${address.toLowerCase()}@${domain.name}`;
 
-  // Extract local part for database storage
-  const localPart = fullEmail.split("@")[0];
+  const [localPart] = fullEmail.split("@");
 
-  // Validate mailbox address format
   if (!/^[a-zA-Z0-9._%+-]+$/.test(localPart)) {
     return ApiError.send(res, 400, "Invalid mailbox address format");
   }
@@ -56,32 +50,28 @@ const createMailbox = asyncHandler(async (req, res) => {
   // Check for existing mailbox
   const existingMailbox = await Prisma.mailbox.findFirst({
     where: {
-      address: localPart,
+      address: fullEmail, // ✅ match full email
       domainId,
     },
   });
 
   if (existingMailbox) {
-    return ApiError.send(
-      res,
-      400,
-      `Mailbox "${fullEmail}" already exists.`
-    );
+    return ApiError.send(res, 400, `Mailbox "${fullEmail}" already exists.`);
   }
 
   // Hash and encrypt password
   const hashedPassword = await hashPassword(password);
   const encryptedSmtpPassword = encrypt(password);
 
-  // Create mailbox
+  // ✅ Save full email address
   const mailbox = await Prisma.mailbox.create({
     data: {
-      address: localPart, // Store local part in address field
+      address: fullEmail, // ✅ full email
       password: hashedPassword,
       smtpPasswordEncrypted: encryptedSmtpPassword,
       domainId,
       isActive: true,
-      quota: 5120, // default quota in MB
+      quota: 5120,
     },
     include: {
       domain: {
@@ -93,16 +83,13 @@ const createMailbox = asyncHandler(async (req, res) => {
     },
   });
 
-  console.log("Mailbox created successfully:", mailbox.id);
-
-  // Return success with connection info
   return res.status(201).json(
     new ApiResponse(201, "Mailbox created successfully", {
       mailbox: {
         id: mailbox.id,
-        address: mailbox.address,
+        address: mailbox.address, // full email
         domain: mailbox.domain.name,
-        fullEmail: fullEmail, // Return the full email address
+        fullEmail: mailbox.address,
       },
       connection: {
         imap: `imap.${domain.name}:993`,
