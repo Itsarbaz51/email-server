@@ -29,6 +29,9 @@ const verifyDkimRecord = async (domain) => {
       console.warn("⚠️ No DKIM public key found in DB for:", domain);
       return false;
     }
+    console.log('expectedPublicKey', expectedPublicKey);
+    console.log('actualDnsValue', actualDnsValue);
+    
 
     const match = actualDnsValue.includes(expectedPublicKey);
     if (!match) {
