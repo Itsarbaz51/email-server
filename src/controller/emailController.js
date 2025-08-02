@@ -16,7 +16,6 @@ const sendEmail = asyncHandler(async (req, res) => {
   const senderMailboxId = req.mailbox?.id;
 
   if (!from || !to || !subject || !body) {
-    console.log("Missing required fields");
     return ApiError.send(
       res,
       400,
@@ -25,25 +24,16 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   if (!senderMailboxId) {
-    console.log("Sender mailbox not identified");
     return ApiError.send(res, 403, "Sender mailbox not identified.");
   }
 
-  // Extract local part from sender email
-  const [fromUser, fromDomain] = from.split("@");
-
-  if (!fromUser || !fromDomain) {
-    return ApiError.send(res, 400, "Invalid sender email format.");
-  }
-
-  // Find sender mailbox with domain verification
+  // Find sender mailbox with full address match
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
-      address: fromUser,
+      fullAddress: from.toLowerCase(),
       domain: {
-        name: fromDomain,
-        verified: true, // Only allow verified domains
+        verified: true,
       },
     },
     include: {
@@ -51,25 +41,20 @@ const sendEmail = asyncHandler(async (req, res) => {
     },
   });
 
-  console.log("fromMailbox fetched:", fromMailbox);
-
   if (!fromMailbox) {
-    console.log("Unauthorized sender or unverified domain");
     return ApiError.send(res, 403, "Unauthorized sender or unverified domain.");
   }
 
   if (!fromMailbox.smtpPasswordEncrypted) {
-    console.log("Missing SMTP password");
     return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
   }
 
   const rawPassword = decrypt(fromMailbox.smtpPasswordEncrypted);
   if (!rawPassword) {
-    console.log("SMTP password decryption failed");
     return ApiError.send(res, 500, "SMTP password decryption failed.");
   }
 
-  // Handle attachments (if any)
+  // Handle attachments
   const attachments = [];
   if (files.length > 0) {
     const uploadDir = path.join(process.cwd(), "uploads");
@@ -89,36 +74,24 @@ const sendEmail = asyncHandler(async (req, res) => {
     }
   }
 
-  // Validate recipient email format
-  const [toUser, toDomain] = to.split("@");
-  if (!toUser || !toDomain) {
-    console.log("Invalid recipient email format");
-    return ApiError.send(res, 400, "Invalid recipient email format.");
-  }
-
   try {
-    console.log("Creating mail transporter...");
     const transporter = await getMailTransporter(from, rawPassword);
-    console.log("Transporter created successfully");
-
     const mailOptions = {
-      from: `"${fromUser}" <${from}>`,
+      from: `"${fromMailbox.address}" <${from}>`,
       to,
       subject,
       html: body,
       attachments,
     };
 
-    console.log("Sending email...", { from, to, subject });
     const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent successfully:", info.messageId);
+    console.log("Email sent:", info.messageId);
 
-    // Check if recipient is a local mailbox
+    // Store email locally if recipient is local
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
-        address: toUser,
+        address: to.toLowerCase(),
         domain: {
-          name: toDomain,
           verified: true,
         },
       },
@@ -128,8 +101,6 @@ const sendEmail = asyncHandler(async (req, res) => {
     });
 
     if (toMailbox) {
-      console.log("Storing email for local recipient:", toMailbox.address);
-
       const message = await Prisma.message.create({
         data: {
           from,
@@ -150,13 +121,11 @@ const sendEmail = asyncHandler(async (req, res) => {
         },
       });
 
-      console.log("Email stored locally:", message.id);
       return res
         .status(201)
         .json(new ApiResponse(201, "Email sent and stored locally", message));
     }
 
-    console.log("Email sent to external recipient");
     return res.status(201).json(
       new ApiResponse(201, "Email sent successfully", {
         messageId: info.messageId,
