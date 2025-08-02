@@ -1,6 +1,7 @@
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
-import mailauth from "mailauth"; // Changed import style
+import { simpleParser } from "mailparser";
+import * as mailauth from "mailauth"; // Changed import style
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -49,11 +50,9 @@ export const server = new SMTPServer({
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // ✅ DKIM Verification using mailauth.verify()
-      const result = await mailauth.verify(rawEmail.toString("utf8")); // Changed to use mailauth.verify
-      const validSig = result.results?.dkim?.find(
-        (sig) => sig.result === "pass"
-      );
+      // ✅ DKIM Verification using the correct method
+      const result = await mailauth.dkimVerify(rawEmail.toString("utf8"));
+      const validSig = result.results.find((sig) => sig.status === "pass");
 
       if (!validSig) {
         console.warn("❌ DKIM verification failed");
