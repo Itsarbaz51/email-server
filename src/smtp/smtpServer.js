@@ -3,7 +3,7 @@ import mailauth from "mailauth";
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
 
-const { DKIMVerifier } = mailauth;
+const { createDKIMVerifier } = mailauth;
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -53,7 +53,7 @@ export const server = new SMTPServer({
       const rawEmail = Buffer.concat(chunks);
 
       // ✅ DKIM Verification using DKIMVerifier
-      const dkim = new DKIMVerifier();
+      const dkim = createDKIMVerifier();
       const result = await dkim.verify(rawEmail);
       const validSig = result.signatures?.find((sig) => sig.verified);
 
