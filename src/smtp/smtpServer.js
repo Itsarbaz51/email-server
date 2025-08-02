@@ -30,7 +30,12 @@ const verifyDkimRecord = async (domain) => {
     );
 
     if (!expectedPublicKey) {
-      console.warn("⚠️ No DKIM public key found in DB for:", domain);
+      console.warn(
+        "⚠️ No DKIM public key found in DB for:",
+        domain,
+        expectedPublicKey,
+        domainInfo
+      );
       return false;
     }
 
