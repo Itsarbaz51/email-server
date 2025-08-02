@@ -1,23 +1,22 @@
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
+import dns from "dns/promises";
 
 export const server = new SMTPServer({
   authOptional: true,
   allowInsecureAuth: false,
 
   onConnect(session, callback) {
-    console.log("SMTP Connect:", session.id);
+    console.log("📡 SMTP Connect:", session.id);
     callback();
   },
 
   onMailFrom(address, session, callback) {
     const mailFrom = address?.address?.toLowerCase?.();
-    if (!mailFrom) {
-      return callback(new Error("Invalid MAIL FROM address"));
-    }
+    if (!mailFrom) return callback(new Error("Invalid MAIL FROM address"));
 
-    console.log("SMTP MailFrom:", mailFrom, session.id);
+    console.log("📨 MAIL FROM:", mailFrom);
     callback();
   },
 
@@ -42,7 +41,7 @@ export const server = new SMTPServer({
         } else {
           console.log(`📥 RCPT TO unknown (still accepted): ${to}`);
         }
-        callback();
+        callback(); // Always accept (greylisting allowed)
       })
       .catch((err) => {
         console.error("❌ RCPT TO DB error:", err);
@@ -51,50 +50,82 @@ export const server = new SMTPServer({
   },
 
   onData(stream, session, callback) {
-    console.log("SMTP Data received");
+    console.log("📬 Receiving email data...");
     simpleParser(stream, {}, async (err, parsed) => {
       if (err) return callback(err);
 
       const toRaw = parsed.to?.value?.[0]?.address;
-      const to = toRaw.toLowerCase?.();
-      if (!to) {
-        console.error("Invalid 'to' address in parsed email");
-        return callback(new Error("Invalid 'to' address"));
-      }
-
-      const [recipientLocal, recipientDomain] = to.split("@");
-      if (!recipientLocal || !recipientDomain) {
-        console.error("Invalid recipient format in email body:", to);
-        return callback(new Error("Invalid recipient format"));
+      const to = toRaw?.toLowerCase?.();
+      if (!to || !to.includes("@")) {
+        console.error("❌ Invalid recipient address in email:", toRaw);
+        return callback(new Error("Invalid recipient address"));
       }
 
       try {
+        // Lookup mailbox by full address
         const mailbox = await Prisma.mailbox.findFirst({
           where: {
-            address: recipientLocal,
-            domain: { name: recipientDomain, verified: true },
+            address: to,
+            domain: {
+              verified: true,
+            },
+          },
+          include: {
+            domain: true,
           },
         });
 
-        if (mailbox) {
-          await Prisma.message.create({
-            data: {
-              from: parsed.from?.text,
-              to,
-              subject: parsed.subject,
-              body: parsed.text,
-              mailboxId: mailbox.id,
-            },
-          });
-          console.log("✅ Stored email to:", to);
-        } else {
+        if (!mailbox) {
           console.log("📭 Email for unknown mailbox:", to);
+          return callback(); // still accept to avoid bounce
         }
 
+        // ✅ DKIM DNS verification
+        const dkimSelector = mailbox.domain.dkimSelector || "dkim";
+        const dkimRecordName = `${dkimSelector}._domainkey.${mailbox.domain.name}`;
+
+        try {
+          const dnsRecords = await dns.resolveTxt(dkimRecordName);
+          const flattened = dnsRecords
+            .flat()
+            .join("")
+            .replace(/\s+/g, "")
+            .toLowerCase();
+          const expected =
+            `v=dkim1;k=rsa;p=${mailbox.domain.dkimPublicKey}`.toLowerCase();
+
+          if (
+            !flattened.includes(
+              mailbox.domain.dkimPublicKey.replace(/\s+/g, "").toLowerCase()
+            )
+          ) {
+            console.warn(
+              "⚠️ DKIM public key mismatch in DNS for:",
+              mailbox.domain.name
+            );
+          } else {
+            console.log("🔐 DKIM verified for domain:", mailbox.domain.name);
+          }
+        } catch (dnsErr) {
+          console.warn("⚠️ DKIM DNS TXT lookup failed:", dnsErr.message);
+        }
+
+        // ✅ Store the email
+        await Prisma.message.create({
+          data: {
+            from: parsed.from?.text || "",
+            to,
+            subject: parsed.subject || "(No subject)",
+            body: parsed.html || parsed.text || "(No content)",
+            mailboxId: mailbox.id,
+          },
+        });
+
+        console.log("✅ Email stored for:", to);
         callback();
-      } catch (err) {
-        console.error("Email processing error:", err);
-        callback(err);
+      } catch (e) {
+        console.error("❌ Error processing email:", e);
+        callback(e);
       }
     });
   },
