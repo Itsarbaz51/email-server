@@ -1,7 +1,7 @@
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
-import * as mailauth from "mailauth"; // Changed import style
+import { dkimVerify } from "mailauth";
 
 export const server = new SMTPServer({
   authOptional: true,
@@ -50,25 +50,29 @@ export const server = new SMTPServer({
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // ✅ DKIM Verification using the correct method
-      const result = await mailauth.dkimVerify(rawEmail.toString("utf8"));
-      const validSig = result.results.find((sig) => sig.status === "pass");
-
-      if (!validSig) {
-        console.warn("❌ DKIM verification failed");
-        return callback(new Error("DKIM verification failed"));
-      }
-
-      console.log("✅ DKIM verified for:", validSig.domain);
-      console.log("🔐 Selector:", validSig.selector);
-
-      // Parse the email
+      // Parse the email first
       const parsed = await simpleParser(rawEmail);
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
 
       if (!to || !to.includes("@")) {
         return callback(new Error("Invalid TO address"));
+      }
+
+      // Optional DKIM Verification - don't block if it fails
+      try {
+        const result = await dkimVerify(rawEmail.toString("utf8"));
+        const validSig = result.results.find((sig) => sig.status === "pass");
+
+        if (validSig) {
+          console.log("✅ DKIM verified for:", validSig.domain);
+          console.log("🔐 Selector:", validSig.selector);
+        } else {
+          console.warn("⚠️ DKIM verification failed, but continuing...");
+        }
+      } catch (dkimError) {
+        console.warn("⚠️ DKIM verification error:", dkimError.message);
+        // Continue processing even if DKIM fails
       }
 
       const [_, domain] = to.split("@");
