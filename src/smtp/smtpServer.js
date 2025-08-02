@@ -23,7 +23,7 @@ const verifyDkimRecord = async (domain) => {
     const txtRecords = await dns.resolveTxt(lookupName);
     const flattened = txtRecords.map((r) => r.join("")).join("");
     const actualDnsValue = normalizeTxt(flattened);
-    const expectedPublicKey = normalizeTxt(domainInfo.dkimPublicKey || "");
+    const expectedPublicKey = normalizeTxt(domainInfo.dkimPrivateKey || "");
 
     if (!expectedPublicKey) {
       console.warn("⚠️ No DKIM public key found in DB for:", domain);
