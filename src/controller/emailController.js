@@ -31,7 +31,7 @@ const sendEmail = asyncHandler(async (req, res) => {
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
-      fullAddress: from.toLowerCase(),
+      address: from.toLowerCase(),
       domain: {
         verified: true,
       },
