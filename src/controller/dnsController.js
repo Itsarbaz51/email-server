@@ -32,7 +32,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
   const { domain } = req.body;
   const currentUserId = req.user.id;
 
-  if (!domain) throw new ApiError("Domain is required", 400);
+  if (!domain) ApiError.send(res, "Domain is required", 400);
 
   const existingDomain = await Prisma.domain.findFirst({
     where: { name: domain, adminId: currentUserId },
@@ -40,19 +40,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
   });
 
   if (existingDomain) {
-    return res.json(
-      new ApiResponse(200, "Domain already exists", {
-        domain: existingDomain,
-        dnsRecords: existingDomain.dnsRecords.map((r) => ({
-          id: r.id,
-          type: r.type,
-          name: r.name === "@" ? domain : `${r.name}.${domain}`,
-          value: r.value,
-          priority: r.priority,
-          ttl: r.ttl,
-        })),
-      })
-    );
+    return ApiError.send(res, "Domain already exists", 400);
   }
 
   // Generate DKIM Key Pair
@@ -64,7 +52,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       name: domain,
       adminId: currentUserId,
       dkimPrivateKey: dkimKeys.privateKey,
-      dkimPublicKey: dkimKeys.publicKey, // <-- Added this line
+      dkimPublicKey: dkimKeys.publicKey,
       dkimSelector: DKIM_SELECTOR,
     },
   });
@@ -132,9 +120,9 @@ const verifyDNSRecord = async (domainId, recordType) => {
     },
   });
 
-  if (!domain) throw new ApiError("Domain not found", 404);
+  if (!domain) ApiError.send(res, "Domain not found", 404);
   if (!domain.dnsRecords.length)
-    throw new ApiError(`No ${recordType} records found`, 404);
+    ApiError.send(res, `No ${recordType} records found`, 404);
 
   const results = [];
 
@@ -193,7 +181,7 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
   const { id: domainId } = req.params;
   const type = req.query.type?.toUpperCase();
 
-  if (!domainId) throw new ApiError("Domain ID is required", 400);
+  if (!domainId) ApiError.send(res, "Domain ID is required", 400);
 
   try {
     if (type) {
