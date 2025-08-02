@@ -55,7 +55,7 @@ export const server = new SMTPServer({
       const rawEmail = Buffer.concat(chunks);
 
       // DKIM Verification
-      const result = await verifyDKIM(rawEmail);
+      const result = await mailauth.verifyDKIM(rawEmail);
       const validSig = result.signatures?.find((sig) => sig.verified);
 
       if (!validSig) {
