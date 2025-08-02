@@ -32,7 +32,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
   const { domain } = req.body;
   const currentUserId = req.user.id;
 
-  if (!domain) ApiError.send(res, "Domain is required", 400);
+  if (!domain) ApiError.send(res, 400, "Domain is required");
 
   const existingDomain = await Prisma.domain.findFirst({
     where: { name: domain, adminId: currentUserId },
@@ -40,7 +40,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
   });
 
   if (existingDomain) {
-    return ApiError.send(res, "Domain already exists", 400);
+    return ApiError.send(res, 400, "Domain already exists");
   }
 
   // Generate DKIM Key Pair
@@ -181,7 +181,7 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
   const { id: domainId } = req.params;
   const type = req.query.type?.toUpperCase();
 
-  if (!domainId) ApiError.send(res, "Domain ID is required", 400);
+  if (!domainId) ApiError.send(res, 400, "Domain ID is required");
 
   try {
     if (type) {
