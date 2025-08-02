@@ -1,3 +1,8 @@
+import { SMTPServer } from "smtp-server";
+import { simpleParser } from "mailparser";
+import Prisma from "../db/db.js";
+import { comparePassword } from "../utils/utils.js";
+
 export const server = new SMTPServer({
   authOptional: true, // ✅ Gmail needs this
   allowInsecureAuth: false, // fine
