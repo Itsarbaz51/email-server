@@ -32,7 +32,12 @@ const verifyDkimRecord = async (domain) => {
 
     const match = actualDnsValue.includes(expectedPublicKey);
     if (!match) {
-      console.warn("❌ DKIM public key mismatch for domain:", domain);
+      console.warn(
+        "❌ DKIM public key mismatch for domain:",
+        domain,
+        actualDnsValue,
+        expectedPublicKey
+      );
     }
 
     return match;
