@@ -1,9 +1,7 @@
 import { SMTPServer } from "smtp-server";
-import { simpleParser } from "mailparser";
+import mailauth from "mailauth";
 import mailauth from "mailauth";
 import Prisma from "../db/db.js";
-
-const { verifyDKIM } = mailauth;
 
 export const server = new SMTPServer({
   authOptional: true,
