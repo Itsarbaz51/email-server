@@ -1,6 +1,7 @@
 import { simpleParser } from "mailparser";
 import mailauth from "mailauth";
 import Prisma from "../db/db.js";
+import { SMTPServer } from "smtp-server";
 
 const { DKIMVerifier } = mailauth;
 
