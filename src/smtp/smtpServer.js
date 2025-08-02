@@ -92,7 +92,7 @@ export const server = new SMTPServer({
               from: parsed.from?.text,
               to,
               subject: parsed.subject,
-              body: parsed.html || parsed.text,
+              body: parsed.text,
               mailboxId: mailbox.id,
             },
           });
