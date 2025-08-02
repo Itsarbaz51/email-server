@@ -3,6 +3,47 @@ import { simpleParser } from "mailparser";
 import Prisma from "../db/db.js";
 import dns from "dns/promises";
 
+// Safe normalize function
+const normalizeTxt = (txt) =>
+  (txt || "").replace(/"/g, "").replace(/\s+/g, "").trim().toLowerCase();
+
+const verifyDkimRecord = async (domain) => {
+  try {
+    const domainInfo = await Prisma.domain.findFirst({
+      where: { name: domain, verified: true },
+    });
+
+    if (!domainInfo) {
+      console.warn("❌ Domain not found or not verified:", domain);
+      return false;
+    }
+
+    const selector = domainInfo.dkimSelector || "dkim";
+    const lookupName = `${selector}._domainkey.${domain}`;
+
+    const txtRecords = await dns.resolveTxt(lookupName);
+    const flattened = txtRecords.map((r) => r.join("")).join("");
+    const actualDnsValue = normalizeTxt(flattened);
+    const expectedPublicKey = normalizeTxt(
+      domainInfo.dkimPublicKey || domainInfo.dkimPublic || ""
+    );
+
+    if (!expectedPublicKey) {
+      console.warn("⚠️ No stored DKIM public key for:", domain);
+      return false;
+    }
+
+    const match = actualDnsValue.includes(expectedPublicKey);
+    if (!match) {
+      console.warn("❌ DKIM public key mismatch for domain:", domain);
+    }
+    return match;
+  } catch (err) {
+    console.error("⚠️ DKIM DNS TXT lookup failed:", err.message);
+    return false;
+  }
+};
+
 export const server = new SMTPServer({
   authOptional: true,
   allowInsecureAuth: false,
@@ -22,9 +63,8 @@ export const server = new SMTPServer({
 
   onRcptTo(address, session, callback) {
     const to = address?.address?.toLowerCase?.();
-    if (!to || !to.includes("@")) {
+    if (!to || !to.includes("@"))
       return callback(new Error("Invalid RCPT TO address format"));
-    }
 
     Prisma.mailbox
       .findFirst({
@@ -41,7 +81,7 @@ export const server = new SMTPServer({
         } else {
           console.log(`📥 RCPT TO unknown (still accepted): ${to}`);
         }
-        callback(); // Always accept (greylisting allowed)
+        callback();
       })
       .catch((err) => {
         console.error("❌ RCPT TO DB error:", err);
@@ -56,76 +96,41 @@ export const server = new SMTPServer({
 
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
-      if (!to || !to.includes("@")) {
-        console.error("❌ Invalid recipient address in email:", toRaw);
-        return callback(new Error("Invalid recipient address"));
-      }
+
+      if (!to || !to.includes("@"))
+        return callback(new Error("Invalid 'to' address"));
+
+      const [_, domain] = to.split("@");
 
       try {
-        // Lookup mailbox by full address
         const mailbox = await Prisma.mailbox.findFirst({
           where: {
             address: to,
             domain: {
+              name: domain,
               verified: true,
             },
           },
-          include: {
-            domain: true,
-          },
         });
 
-        if (!mailbox) {
-          console.log("📭 Email for unknown mailbox:", to);
-          return callback(); // still accept to avoid bounce
-        }
+        const dkimValid = await verifyDkimRecord(domain);
 
-        // ✅ DKIM DNS verification
-        const dkimSelector = mailbox.domain.dkimSelector || "dkim";
-        const dkimRecordName = `${dkimSelector}._domainkey.${mailbox.domain.name}`;
-
-        try {
-          const dnsRecords = await dns.resolveTxt(dkimRecordName);
-          const flattened = dnsRecords
-            .flat()
-            .join("")
-            .replace(/\s+/g, "")
-            .toLowerCase();
-          const expected =
-            `v=dkim1;k=rsa;p=${mailbox.domain.dkimPublicKey}`.toLowerCase();
-
-          if (
-            !flattened.includes(
-              mailbox.domain.dkimPublicKey.replace(/\s+/g, "").toLowerCase()
-            )
-          ) {
-            console.warn(
-              "⚠️ DKIM public key mismatch in DNS for:",
-              mailbox.domain.name
-            );
-          } else {
-            console.log("🔐 DKIM verified for domain:", mailbox.domain.name);
-          }
-        } catch (dnsErr) {
-          console.warn("⚠️ DKIM DNS TXT lookup failed:", dnsErr.message);
-        }
-
-        // ✅ Store the email
         await Prisma.message.create({
           data: {
             from: parsed.from?.text || "",
             to,
-            subject: parsed.subject || "(No subject)",
-            body: parsed.html || parsed.text || "(No content)",
-            mailboxId: mailbox.id,
+            subject: parsed.subject || "",
+            body: parsed.html || parsed.text || "",
+            dkimVerified: dkimValid,
+            mailboxId: mailbox?.id ?? null,
           },
         });
 
-        console.log("✅ Email stored for:", to);
+        console.log(`✅ Email stored for: ${to}`);
         callback();
-      } catch (e) {
-        console.error("❌ Error processing email:", e);
-        callback(e);
+      } catch (err) {
+        console.error("❌ Email processing error:", err);
+        callback(err);
       }
     });
   },
