@@ -1,10 +1,13 @@
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
+import fs from "fs";
 
 export const server = new SMTPServer({
   authOptional: true,
   allowInsecureAuth: false,
+  key: fs.readFileSync("/etc/ssl/private/privkey.pem"),
+  cert: fs.readFileSync("/etc/ssl/certs/fullchain.pem"),
   onConnect(session, callback) {
     console.log("📡 SMTP Connect:", session.id);
     callback();
