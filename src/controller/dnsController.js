@@ -60,21 +60,21 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
   const recordsToCreate = [
     {
       type: "A",
-      name: "mail",
+      name: "smtp",
       value: process.env.SERVER_IP,
       domainId: newDomain.id,
     },
     {
       type: "MX",
       name: "@",
-      value: "mail.primewebdev.in",
+      value: "smtp.primewebdev.in",
       priority: 10,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: "@",
-      value: `v=spf1 a:mail.primewebdev.in mx ~all`,
+      value: `v=spf1 a:smtp.primewebdev.in mx ~all`,
       domainId: newDomain.id,
     },
     {
