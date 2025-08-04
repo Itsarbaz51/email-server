@@ -5,10 +5,8 @@ import path from "path";
 import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
+import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
-import nodemailer from "nodemailer";
-import dns from "dns/promises";
-
 const sendEmail = asyncHandler(async (req, res) => {
   console.log("sendEmail called with:", req.body);
 
@@ -177,4 +175,40 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 });
 
-export { sendEmail };
+const getMessages = asyncHandler(async (req, res) => {
+  console.log("getMessages called for mailbox:", req.mailbox);
+  const { mailboxId } = req.params;
+  const userId = req.mailbox?.id;
+
+  if (!userId) {
+    return ApiError.send(res, 401, "Authentication required");
+  }
+
+  // Verify mailbox ownership
+  const mailbox = await Prisma.mailbox.findFirst({
+    where: {
+      id: mailboxId,
+      id: userId, // Ensure user can only access their own mailbox
+    },
+  });
+
+  if (!mailbox) {
+    return ApiError.send(res, 403, "Unauthorized access to mailbox");
+  }
+
+  const messages = await Prisma.message.findMany({
+    where: { mailboxId },
+    include: {
+      attachments: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Messages retrieved successfully", messages));
+});
+
+export { sendEmail, getMessages };
