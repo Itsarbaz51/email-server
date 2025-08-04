@@ -5,8 +5,9 @@ import path from "path";
 import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
-import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
+import nodemailer from "nodemailer";
+import dns from "dns/promises";
 
 const sendEmail = asyncHandler(async (req, res) => {
   console.log("sendEmail called with:", req.body);
@@ -27,7 +28,6 @@ const sendEmail = asyncHandler(async (req, res) => {
     return ApiError.send(res, 403, "Sender mailbox not identified.");
   }
 
-  // Find sender mailbox with full address match
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
@@ -54,7 +54,6 @@ const sendEmail = asyncHandler(async (req, res) => {
     return ApiError.send(res, 500, "SMTP password decryption failed.");
   }
 
-  // Handle attachments
   const attachments = [];
   if (files.length > 0) {
     const uploadDir = path.join(process.cwd(), "uploads");
@@ -75,9 +74,28 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   try {
-    const transporter = await getMailTransporter(from, rawPassword);
+    // Use MX lookup for recipient domain
+    const recipientDomain = to.split("@")[1];
+    const mxRecords = await dns.resolveMx(recipientDomain);
+    if (!mxRecords || mxRecords.length === 0) {
+      return ApiError.send(res, 500, "No MX records found for recipient.");
+    }
+
+    // Choose lowest priority mail server
+    const mxHost = mxRecords.sort((a, b) => a.priority - b.priority)[0]
+      .exchange;
+
+    const transporter = nodemailer.createTransport({
+      host: mxHost,
+      port: 25,
+      secure: false,
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
     const mailOptions = {
-      from: `"${fromMailbox.address}" <${from}>`,
+      from,
       to,
       subject,
       html: body,
@@ -87,7 +105,7 @@ const sendEmail = asyncHandler(async (req, res) => {
     const info = await transporter.sendMail(mailOptions);
     console.log("Email sent:", info.messageId);
 
-    // Store email locally if recipient is local
+    // Check if recipient is local and save
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
         address: to.toLowerCase(),
@@ -144,7 +162,11 @@ const sendEmail = asyncHandler(async (req, res) => {
     }
 
     if (error.code === "ECONNECTION") {
-      return ApiError.send(res, 500, "Could not connect to SMTP server");
+      return ApiError.send(
+        res,
+        500,
+        "Could not connect to recipient SMTP server"
+      );
     }
 
     if (error.code === "EAUTH") {
@@ -155,40 +177,4 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 });
 
-const getMessages = asyncHandler(async (req, res) => {
-  console.log("getMessages called for mailbox:", req.mailbox);
-  const { mailboxId } = req.params;
-  const userId = req.mailbox?.id;
-
-  if (!userId) {
-    return ApiError.send(res, 401, "Authentication required");
-  }
-
-  // Verify mailbox ownership
-  const mailbox = await Prisma.mailbox.findFirst({
-    where: {
-      id: mailboxId,
-      id: userId, // Ensure user can only access their own mailbox
-    },
-  });
-
-  if (!mailbox) {
-    return ApiError.send(res, 403, "Unauthorized access to mailbox");
-  }
-
-  const messages = await Prisma.message.findMany({
-    where: { mailboxId },
-    include: {
-      attachments: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, "Messages retrieved successfully", messages));
-});
-
-export { sendEmail, getMessages };
+export { sendEmail };
