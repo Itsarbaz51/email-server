@@ -6,8 +6,6 @@ import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
-import dns from "dns/promises";
-import nodemailer from "nodemailer";
 import { decrypt } from "../utils/encryption.js";
 
 const sendEmail = asyncHandler(async (req, res) => {
@@ -75,32 +73,10 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Use MX lookup for recipient domain
-    const recipientDomain = to.split("@")[1];
-    const mxRecords = await dns.resolveMx(recipientDomain);
-    if (!mxRecords || mxRecords.length === 0) {
-      return ApiError.send(res, 500, "No MX records found for recipient.");
-    }
-
-    // Choose lowest priority mail server
-    const mxHost = mxRecords.sort((a, b) => a.priority - b.priority)[0]
-      .exchange;
-
-    const transporter = nodemailer.createTransport({
-      host: "mail.primewebdev.in",
-      port: 587,
-      secure: false,
-      auth: {
-        user: from,
-        pass: rawPassword,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
+    const transporter = await getMailTransporter(from, rawPassword);
 
     const mailOptions = {
-      from,
+      from: `${fromMailbox.address}`,
       to,
       subject,
       html: body,
@@ -110,7 +86,6 @@ const sendEmail = asyncHandler(async (req, res) => {
     const info = await transporter.sendMail(mailOptions);
     console.log("Email sent:", info.messageId);
 
-    // Check if recipient is local and save
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
         address: to.toLowerCase(),
@@ -191,11 +166,10 @@ const getMessages = asyncHandler(async (req, res) => {
     return ApiError.send(res, 401, "Authentication required");
   }
 
-  // Verify mailbox ownership
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
       id: mailboxId,
-      id: userId, // Ensure user can only access their own mailbox
+      id: userId,
     },
   });
 
