@@ -2,6 +2,7 @@
 import Prisma from "../db/db.js";
 import { simpleParser } from "mailparser";
 import fs from "fs";
+import { decrypt } from "../utils/encryption.js";
 
 export const serverOptions = {
   authOptional: true,
