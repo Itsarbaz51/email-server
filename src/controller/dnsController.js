@@ -56,7 +56,6 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       dkimSelector: DKIM_SELECTOR,
     },
   });
-
   const recordsToCreate = [
     {
       type: "A",
@@ -74,13 +73,13 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "@",
-      value: `v=spf1 a:mail.primewebdev.in mx ~all`,
+      value: `v=spf1 a mx ip4:${process.env.SERVER_IP} ~all`,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: `${DKIM_SELECTOR}._domainkey`,
-      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey.replace(/\n/g, "")}`,
+      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey.replace(/\n/g, "").replace(/\r/g, "").trim()}`,
       domainId: newDomain.id,
     },
     {
