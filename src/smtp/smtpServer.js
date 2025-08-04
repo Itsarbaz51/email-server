@@ -66,6 +66,7 @@ export const serverOptions = {
     session.envelope.mailFrom = mailFrom;
     callback();
   },
+
   onRcptTo(address, session, callback) {
     let to = typeof address === "string" ? address : address?.address;
 
@@ -78,7 +79,10 @@ export const serverOptions = {
 
     session.envelope = session.envelope || {};
     session.envelope.rcptTo = session.envelope.rcptTo || [];
-    session.envelope.rcptTo.push(to);
+
+    // 👇 Store as object, not string
+    session.envelope.rcptTo.push({ address: to });
+
     callback();
   },
 
