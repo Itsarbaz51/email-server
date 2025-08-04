@@ -1,21 +1,13 @@
-import fs from "fs";
-import path from "path";
 import Prisma from "../db/db.js";
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
 
-const certPath = "/etc/letsencrypt/live/smtp.primewebdev.in";
-
 export const server = new SMTPServer({
-  secure: true, // Use SMTPS (port 465) OR use STARTTLS via onConnect
-  key: fs.readFileSync(path.join(certPath, "privkey.pem")),
-  cert: fs.readFileSync(path.join(certPath, "fullchain.pem")),
   authOptional: true,
   allowInsecureAuth: false,
-
   onConnect(session, callback) {
     console.log("📡 SMTP Connect:", session.id);
-    callback(); // Optional auth can be validated here
+    callback();
   },
 
   onMailFrom(address, session, callback) {
@@ -56,18 +48,28 @@ export const server = new SMTPServer({
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
+
+      // Parse the email first
       const parsed = await simpleParser(rawEmail);
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
-      if (!to || !to.includes("@"))
+
+      if (!to || !to.includes("@")) {
         return callback(new Error("Invalid TO address"));
+      }
+
       const [_, domain] = to.split("@");
 
       const mailbox = await Prisma.mailbox.findFirst({
-        where: { address: to, domain: { name: domain, verified: true } },
+        where: {
+          address: to,
+          domain: { name: domain, verified: true },
+        },
       });
 
-      if (!mailbox) console.warn("📭 Mailbox not found for:", to);
+      if (!mailbox) {
+        console.warn("📭 Mailbox not found for:", to);
+      }
 
       await Prisma.message.create({
         data: {
