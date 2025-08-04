@@ -66,12 +66,16 @@ export const serverOptions = {
     session.envelope.mailFrom = mailFrom;
     callback();
   },
-
   onRcptTo(address, session, callback) {
-    const to = address?.address?.toLowerCase?.();
-    if (!to || !to.includes("@")) return callback(new Error("Invalid RCPT TO"));
+    let to = typeof address === "string" ? address : address?.address;
 
+    if (!to || !to.includes("@")) {
+      return callback(new Error("Invalid RCPT TO"));
+    }
+
+    to = to.toLowerCase();
     console.log(`📥 RCPT TO: ${to}`);
+
     session.envelope = session.envelope || {};
     session.envelope.rcptTo = session.envelope.rcptTo || [];
     session.envelope.rcptTo.push(to);
