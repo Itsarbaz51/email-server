@@ -85,30 +85,36 @@ export const serverOptions = {
 
     callback();
   },
-
   async onData(stream, session, callback) {
     console.log("📬 Processing email data...");
     try {
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
-
       const parsed = await simpleParser(rawEmail);
+
       console.log(
-        `📧 Email received from ${session.envelope.mailFrom} to ${session.envelope.rcptTo}`
+        `📧 Email received from ${session.envelope.mailFrom?.address} to ${session.envelope.rcptTo.map((r) => r.address).join(", ")}`
       );
 
-      // Process local deliveries
-      for (const to of session.envelope.rcptTo) {
+      for (const rcpt of session.envelope.rcptTo) {
+        const to = rcpt.address.toLowerCase();
         const [_, domain] = to.split("@");
+
         const mailbox = await Prisma.mailbox.findFirst({
-          where: { address: to, domain: { name: domain, verified: true } },
+          where: {
+            address: to,
+            domain: {
+              name: domain,
+              verified: true,
+            },
+          },
         });
 
         if (mailbox) {
           await Prisma.message.create({
             data: {
-              from: session.envelope.mailFrom,
+              from: session.envelope.mailFrom?.address || "",
               to,
               subject: parsed.subject || "(No Subject)",
               body: parsed.text || "",
