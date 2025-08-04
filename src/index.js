@@ -1,7 +1,8 @@
 import dotenv from "dotenv";
 import app from "./app.js";
 import Prisma from "./db/db.js";
-import { server } from "./smtp/smtpServer.js";
+import { SMTPServer } from "smtp-server";
+import { serverOptions } from "./smtp/smtpServer.js"; // export server config instead of single instance
 
 dotenv.config({ path: "./.env" });
 
@@ -10,16 +11,18 @@ dotenv.config({ path: "./.env" });
     await Prisma.$connect();
     console.log("✅ DATABASE CONNECTED SUCCESSFULLY");
 
-    // Listen on 25 & 587 both
-    const RECEIVE_PORTS = [25, 587];
-    RECEIVE_PORTS.forEach((port) => {
-      server.listen(port, "0.0.0.0", () => {
+    // Create two SMTP server instances for port 25 and 587
+    const ports = [25, 587];
+    ports.forEach((port) => {
+      const smtp = new SMTPServer(serverOptions);
+      smtp.listen(port, "0.0.0.0", () => {
         console.log(
           `📨 SMTP SERVER RUNNING ON PORT ${port} (Receiving emails)`
         );
       });
     });
 
+    // HTTP API Server
     const PORT = process.env.PORT || 9000;
     app.listen(PORT, () => {
       console.log(`🚀 HTTP SERVER RUNNING ON http://localhost:${PORT}`);
