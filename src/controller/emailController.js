@@ -9,6 +9,7 @@ import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import dns from "dns/promises";
 import nodemailer from "nodemailer";
 import { decrypt } from "../utils/encryption.js";
+
 const sendEmail = asyncHandler(async (req, res) => {
   console.log("sendEmail called with:", req.body);
 
@@ -86,9 +87,13 @@ const sendEmail = asyncHandler(async (req, res) => {
       .exchange;
 
     const transporter = nodemailer.createTransport({
-      host: mxHost,
-      port: 25,
+      host: "mail.primewebdev.in",
+      port: 587,
       secure: false,
+      auth: {
+        user: from,
+        pass: rawPassword,
+      },
       tls: {
         rejectUnauthorized: false,
       },
