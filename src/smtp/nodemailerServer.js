@@ -26,23 +26,24 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || `mail.${domainName}`,
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false, // Use STARTTLS
-      requireTLS: true,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: false, // Use STARTTLS on port 587
+      requireTLS: true, // Enforce TLS
       auth: {
-        user: fullEmail,
+        user: fullEmail.trim().toLowerCase(), // normalize email
         pass: rawPassword,
       },
-      dkim: {
+      dkim: dkimPrivateKey && {
         domainName,
         keySelector: dkimSelector || "dkim",
         privateKey: dkimPrivateKey,
       },
       tls: {
-        rejectUnauthorized: false, // For self-signed certs
+        // Only use this in development if you have self-signed certs
+        rejectUnauthorized: process.env.NODE_ENV === "production",
       },
-      logger: true,
-      debug: true,
+      logger: process.env.NODE_ENV !== "production", // log only in dev
+      debug: process.env.NODE_ENV !== "production", // debug only in dev
     });
 
     await transporter.verify();
