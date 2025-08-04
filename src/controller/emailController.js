@@ -73,6 +73,7 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   try {
+    console.log(`Attempting to send email from ${from} to ${to}`);
     const transporter = await getMailTransporter(from, rawPassword);
 
     const mailOptions = {
@@ -82,9 +83,14 @@ const sendEmail = asyncHandler(async (req, res) => {
       html: body,
       attachments,
     };
-
+    console.log("Transporter created, sending mail...");
     const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent:", info.messageId);
+    console.log("Email sent successfully:", {
+      messageId: info.messageId,
+      envelope: info.envelope,
+      accepted: info.accepted,
+      rejected: info.rejected,
+    });
 
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
@@ -131,29 +137,13 @@ const sendEmail = asyncHandler(async (req, res) => {
       })
     );
   } catch (error) {
-    console.error("SMTP Error:", error);
-
-    if (["EDNS", "ENOTFOUND"].includes(error.code)) {
-      return ApiError.send(
-        res,
-        500,
-        "DNS resolution failed for recipient domain"
-      );
-    }
-
-    if (error.code === "ECONNECTION") {
-      return ApiError.send(
-        res,
-        500,
-        "Could not connect to recipient SMTP server"
-      );
-    }
-
-    if (error.code === "EAUTH") {
-      return ApiError.send(res, 401, "SMTP authentication failed");
-    }
-
-    return ApiError.send(res, 500, `Failed to send email: ${error.message}`);
+    console.error("Full send error:", {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      response: error.response,
+    });
+    throw error;
   }
 });
 
