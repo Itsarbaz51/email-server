@@ -11,6 +11,35 @@ export const serverOptions = {
     "/etc/letsencrypt/live/mail.primewebdev.in/fullchain.pem"
   ),
 
+  // In smtpServer.js inside serverOptions
+  onAuth(auth, session, callback) {
+    const { username, password } = auth;
+
+    Prisma.mailbox
+      .findFirst({
+        where: {
+          address: username.toLowerCase(),
+          smtpPasswordEncrypted: { not: null },
+          domain: {
+            verified: true,
+          },
+        },
+      })
+      .then((mailbox) => {
+        if (!mailbox) return callback(new Error("User not found"));
+
+        const decrypted = decrypt(mailbox.smtpPasswordEncrypted);
+        if (password === decrypted) {
+          return callback(null, { user: mailbox });
+        } else {
+          return callback(new Error("Invalid credentials"));
+        }
+      })
+      .catch((err) => {
+        return callback(new Error("Auth error: " + err.message));
+      });
+  },
+
   onConnect(session, callback) {
     console.log("📡 SMTP Connect:", session.id);
     callback();
