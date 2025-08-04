@@ -27,7 +27,8 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || `mail.${domainName}`,
       port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: true, // Force TLS
+      secure: false, // Use STARTTLS
+      requireTLS: true,
       auth: {
         user: fullEmail,
         pass: rawPassword,
@@ -37,11 +38,13 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
         keySelector: dkimSelector || "dkim",
         privateKey: dkimPrivateKey,
       },
-      logger: true, // Enable verbose logging
-      debug: true, // Show debug output
+      tls: {
+        rejectUnauthorized: false, // For self-signed certs
+      },
+      logger: true,
+      debug: true,
     });
 
-    // Verify connection
     await transporter.verify();
     console.log("SMTP connection verified successfully");
     return transporter;

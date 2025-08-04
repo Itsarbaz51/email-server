@@ -11,16 +11,10 @@ dotenv.config({ path: "./.env" });
     await Prisma.$connect();
     console.log("✅ DATABASE CONNECTED SUCCESSFULLY");
 
-    // Create separate SMTP servers for submission and relay
     const submissionServer = new SMTPServer({
       ...serverOptions,
       name: "submission",
-      secure: true, // Force TLS for submission port
-      authMethods: ["PLAIN", "LOGIN"], // Standard auth methods
-      onAuth(auth, session, callback) {
-        console.log(`🔐 Submission auth attempt: ${auth.username}`);
-        serverOptions.onAuth(auth, session, callback);
-      },
+      authMethods: ["PLAIN", "LOGIN"],
       onConnect(session, callback) {
         console.log(`📡 Submission client connected: ${session.remoteAddress}`);
         serverOptions.onConnect(session, callback);
@@ -30,15 +24,14 @@ dotenv.config({ path: "./.env" });
     const relayServer = new SMTPServer({
       ...serverOptions,
       name: "relay",
-      secure: false, // Allow plaintext for compatibility
-      authOptional: true, // For relaying
+      authOptional: true,
       onConnect(session, callback) {
         console.log(`📡 Relay client connected: ${session.remoteAddress}`);
         serverOptions.onConnect(session, callback);
       },
     });
 
-    // Error handling for SMTP servers
+    // Error handling
     submissionServer.on("error", (err) => {
       console.error("❌ Submission server error:", err);
     });
@@ -49,29 +42,31 @@ dotenv.config({ path: "./.env" });
 
     // Start servers
     submissionServer.listen(587, "0.0.0.0", () => {
-      console.log("📤 Submission server running on port 587 (Sending emails)");
+      console.log("📤 Submission server running on port 587");
     });
 
     relayServer.listen(25, "0.0.0.0", () => {
-      console.log("📥 Relay server running on port 25 (Receiving emails)");
+      console.log("📥 Relay server running on port 25");
     });
 
-    // HTTP API Server
+    // HTTP Server
     const PORT = process.env.PORT || 9000;
     app.listen(PORT, () => {
-      console.log(`🚀 HTTP SERVER RUNNING ON http://localhost:${PORT}`);
+      console.log(`🚀 HTTP server running on port ${PORT}`);
     });
 
     // Graceful shutdown
     process.on("SIGTERM", async () => {
-      console.log("🛑 Shutting down servers gracefully...");
-      await new Promise((resolve) => submissionServer.close(resolve));
-      await new Promise((resolve) => relayServer.close(resolve));
-      await Prisma.$disconnect();
+      console.log("🛑 Shutting down gracefully...");
+      await Promise.all([
+        new Promise((res) => submissionServer.close(res)),
+        new Promise((res) => relayServer.close(res)),
+        Prisma.$disconnect(),
+      ]);
       process.exit(0);
     });
   } catch (error) {
-    console.error("❌ SERVER START FAILED:", error);
+    console.error("❌ Server startup failed:", error);
     process.exit(1);
   }
 })();
