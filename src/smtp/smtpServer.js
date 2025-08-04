@@ -1,4 +1,3 @@
-// smtp/smtpServer.js
 import Prisma from "../db/db.js";
 import { simpleParser } from "mailparser";
 import fs from "fs";
@@ -12,7 +11,6 @@ export const serverOptions = {
     "/etc/letsencrypt/live/mail.primewebdev.in/fullchain.pem"
   ),
 
-  // In smtpServer.js inside serverOptions
   onAuth(auth, session, callback) {
     const { username, password } = auth;
 
@@ -21,9 +19,7 @@ export const serverOptions = {
         where: {
           address: username.toLowerCase(),
           smtpPasswordEncrypted: { not: null },
-          domain: {
-            verified: true,
-          },
+          domain: { verified: true },
         },
       })
       .then((mailbox) => {
@@ -36,9 +32,7 @@ export const serverOptions = {
           return callback(new Error("Invalid credentials"));
         }
       })
-      .catch((err) => {
-        return callback(new Error("Auth error: " + err.message));
-      });
+      .catch((err) => callback(new Error("Auth error: " + err.message)));
   },
 
   onConnect(session, callback) {
@@ -84,6 +78,7 @@ export const serverOptions = {
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
       const parsed = await simpleParser(rawEmail);
+
       const toRaw = parsed.to?.value?.[0]?.address;
       const to = toRaw?.toLowerCase?.();
       if (!to || !to.includes("@")) {
@@ -101,6 +96,8 @@ export const serverOptions = {
 
       if (!mailbox) {
         console.warn("📭 Mailbox not found for:", to);
+        console.log("⏩ Skipping message DB save for external recipient.");
+        return callback(); // Do not throw error
       }
 
       await Prisma.message.create({
@@ -109,7 +106,7 @@ export const serverOptions = {
           to,
           subject: parsed.subject || "",
           body: parsed.text || "",
-          mailboxId: mailbox?.id ?? null,
+          mailboxId: mailbox.id, // ✅ only used if mailbox exists
         },
       });
 
