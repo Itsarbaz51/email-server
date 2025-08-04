@@ -6,6 +6,8 @@ import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
 import { getMailTransporter } from "../smtp/nodemailerServer.js";
+import dns from "dns/promises";
+import nodemailer from "nodemailer";
 import { decrypt } from "../utils/encryption.js";
 const sendEmail = asyncHandler(async (req, res) => {
   console.log("sendEmail called with:", req.body);
