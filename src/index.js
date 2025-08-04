@@ -8,25 +8,26 @@ dotenv.config({ path: "./.env" });
 
 (async function main() {
   try {
+    // 1. Connect to DB
     await Prisma.$connect();
     console.log("✅ DATABASE CONNECTED");
 
-    // Receive Plain SMTP (Optional)
-    const SMTP_PORT = process.env.SMTP_PORT_RECEIVE || 25;
+    // 2. Start Plain SMTP (Receiving on port 25)
+    const SMTP_PORT = parseInt(process.env.SMTP_PORT_RECEIVE) || 25;
     plainSMTPServer.listen(SMTP_PORT, "0.0.0.0", () => {
-      console.log(`📨 PLAIN SMTP SERVER RUNNING ON ${SMTP_PORT}`);
+      console.log(`📨 PLAIN SMTP SERVER RUNNING ON PORT ${SMTP_PORT}`);
     });
 
-    // Receive Secure SMTPS
+    // 3. Start Secure SMTPS (Receiving on port 465)
     const SMTPS_PORT = 465;
     secureSMTPServer.listen(SMTPS_PORT, "0.0.0.0", () => {
-      console.log(`🔐 SMTPS SERVER RUNNING ON ${SMTPS_PORT}`);
+      console.log(`🔐 SMTPS SERVER RUNNING ON PORT ${SMTPS_PORT}`);
     });
 
-    // HTTP Express API
-    const PORT = process.env.PORT || 9000;
+    // 4. Start HTTP Express server (API / Send endpoint)
+    const PORT = parseInt(process.env.PORT) || 9000;
     app.listen(PORT, () => {
-      console.log(`🚀 HTTP SERVER RUNNING ON http://localhost:${PORT}`);
+      console.log(`🚀 HTTP API SERVER RUNNING AT http://localhost:${PORT}`);
     });
   } catch (err) {
     console.error("❌ SERVER START FAILED:", err);
