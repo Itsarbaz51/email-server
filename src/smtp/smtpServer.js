@@ -6,8 +6,11 @@ import fs from "fs";
 export const server = new SMTPServer({
   authOptional: true,
   allowInsecureAuth: false,
-  key: fs.readFileSync("/etc/ssl/private/privkey.pem"),
-  cert: fs.readFileSync("/etc/ssl/certs/fullchain.pem"),
+  key: fs.readFileSync("/etc/letsencrypt/live/mail.primewebdev.in/privkey.pem"),
+  cert: fs.readFileSync(
+    "/etc/letsencrypt/live/mail.primewebdev.in/fullchain.pem"
+  ),
+
   onConnect(session, callback) {
     console.log("📡 SMTP Connect:", session.id);
     callback();
@@ -15,7 +18,6 @@ export const server = new SMTPServer({
 
   onMailFrom(address, session, callback) {
     const mailFrom = address?.address?.toLowerCase?.();
-    if (!mailFrom) return callback(new Error("Invalid MAIL FROM address"));
     console.log("📨 MAIL FROM:", mailFrom);
     callback();
   },
@@ -24,7 +26,6 @@ export const server = new SMTPServer({
     const to = address?.address?.toLowerCase?.();
     if (!to || !to.includes("@"))
       return callback(new Error("Invalid RCPT TO address"));
-
     Prisma.mailbox
       .findFirst({
         where: {
@@ -46,33 +47,23 @@ export const server = new SMTPServer({
 
   async onData(stream, session, callback) {
     console.log("📬 Receiving email data...");
-
     try {
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       const rawEmail = Buffer.concat(chunks);
 
-      // Parse the email first
       const parsed = await simpleParser(rawEmail);
-      const toRaw = parsed.to?.value?.[0]?.address;
-      const to = toRaw?.toLowerCase?.();
-
-      if (!to || !to.includes("@")) {
+      const to = parsed.to?.value?.[0]?.address?.toLowerCase();
+      if (!to || !to.includes("@"))
         return callback(new Error("Invalid TO address"));
-      }
 
       const [_, domain] = to.split("@");
-
       const mailbox = await Prisma.mailbox.findFirst({
         where: {
           address: to,
           domain: { name: domain, verified: true },
         },
       });
-
-      if (!mailbox) {
-        console.warn("📭 Mailbox not found for:", to);
-      }
 
       await Prisma.message.create({
         data: {
