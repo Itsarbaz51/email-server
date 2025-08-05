@@ -56,67 +56,99 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       dkimSelector: DKIM_SELECTOR,
     },
   });
+  
   const recordsToCreate = [
+    // Essential A Records
     {
       type: "A",
       name: "mail",
       value: process.env.SERVER_IP,
       domainId: newDomain.id,
-      ttl: 300, // Reduced TTL for faster updates
+      ttl: 3600,
+      comment: "Primary mail server A record",
     },
     {
       type: "A",
-      name: "@", // Root domain A record
+      name: "@",
       value: process.env.SERVER_IP,
       domainId: newDomain.id,
-      ttl: 300,
+      ttl: 3600,
+      comment: "Root domain A record",
     },
+
+    // MX Records (Mail Exchange)
     {
       type: "MX",
       name: "@",
-      value: `mail.${domain}`, // Use dynamic domain instead of hardcoded
+      value: `mail.${domain}`,
       priority: 10,
       domainId: newDomain.id,
-      ttl: 300,
+      ttl: 3600,
+      comment: "Primary MX record",
     },
+
+    // Email Authentication Records
     {
       type: "TXT",
       name: "@",
-      value: `v=spf1 mx ip4:${process.env.SERVER_IP} -all`, // Strict policy (-all)
+      value: `v=spf1 mx ip4:${process.env.SERVER_IP} include:_spf.google.com include:mailgun.org include:spf.protection.outlook.com ~all`,
       domainId: newDomain.id,
-      ttl: 300,
+      ttl: 3600,
+      comment: "Universal SPF record covering major providers",
     },
     {
       type: "TXT",
       name: `${DKIM_SELECTOR}._domainkey`,
-      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey
-        .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
-        .trim()}`, // Keep proper formatting
+      value: formatDkimRecord(dkimKeys.publicKey),
       domainId: newDomain.id,
-      ttl: 300,
+      ttl: 3600,
+      comment: "DKIM record with proper formatting",
     },
     {
       type: "TXT",
       name: "_dmarc",
-      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}; ruf=mailto:dmarc@${domain}; fo=1`, // Added forensic reporting
+      value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}; ruf=mailto:dmarc-reports@${domain}; fo=1; adkim=s; aspf=s`,
       domainId: newDomain.id,
-      ttl: 300,
+      ttl: 3600,
+      comment: "DMARC record with reporting",
+    },
+
+    // Modern Email Security
+    {
+      type: "TXT",
+      name: "_mta-sts",
+      value: `v=STSv1; id=${Math.floor(Date.now() / 1000)}`,
+      domainId: newDomain.id,
+      ttl: 86400,
+      comment: "MTA-STS enforcement policy",
+    },
+    {
+      type: "TXT",
+      name: "_smtp._tls",
+      value: `v=TLSRPTv1; rua=mailto:tls-reports@${domain}`,
+      domainId: newDomain.id,
+      ttl: 86400,
+      comment: "TLS reporting",
     },
     {
       type: "CNAME",
-      name: "smtp",
-      value: `mail.${domain}`, // Additional CNAME for SMTP
+      name: `${DKIM_SELECTOR}._domainkey.fallback`,
+      value: `${DKIM_SELECTOR}._domainkey.${domain}`,
       domainId: newDomain.id,
-      ttl: 300,
-    },
-    {
-      type: "CNAME",
-      name: "imap",
-      value: `mail.${domain}`, // Additional CNAME for IMAP
-      domainId: newDomain.id,
-      ttl: 300,
+      ttl: 86400,
+      comment: "DKIM fallback record",
     },
   ];
+
+  // Helper function for DKIM formatting
+  function formatDkimRecord(publicKey) {
+    const cleanedKey = publicKey
+      .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
+      .replace(/\n/g, "")
+      .trim();
+
+    return `v=DKIM1; k=rsa; p=${cleanedKey}; t=s; s=email`;
+  }
 
   const createdRecords = await Promise.all(
     recordsToCreate.map((record) => Prisma.dnsRecord.create({ data: record }))
