@@ -26,7 +26,8 @@ export const getMailTransporter = async (fullEmail) => {
     const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
 
     // 👇 Decrypt the encrypted password from DB
-    const rawPassword = decrypt(mailbox.smtpPasswordEncrypted);
+    const decryptedPassword = decrypt(mailbox.smtpPasswordEncrypted);
+    console.log("Plain SMTP Password:", decryptedPassword);
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || `mail.${domainName}`,
