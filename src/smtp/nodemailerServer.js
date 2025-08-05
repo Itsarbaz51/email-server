@@ -1,7 +1,8 @@
 import Prisma from "../db/db.js";
 import nodemailer from "nodemailer";
+import { decrypt } from "../utils/encryption.js"; // wherever you have it
 
-export const getMailTransporter = async (fullEmail, rawPassword) => {
+export const getMailTransporter = async (fullEmail) => {
   try {
     const mailbox = await Prisma.mailbox.findFirst({
       where: {
@@ -24,13 +25,16 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
 
     const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
 
+    // 👇 Decrypt the encrypted password from DB
+    const rawPassword = decrypt(mailbox.smtpPasswordEncrypted);
+
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || `mail.${domainName}`,
       port: Number(process.env.SMTP_PORT) || 587,
       secure: false, // Use STARTTLS on port 587
-      requireTLS: true, // Enforce TLS
+      requireTLS: true,
       auth: {
-        user: fullEmail.trim().toLowerCase(), // normalize email
+        user: fullEmail.trim().toLowerCase(),
         pass: rawPassword,
       },
       dkim: dkimPrivateKey && {
@@ -39,11 +43,10 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
         privateKey: dkimPrivateKey,
       },
       tls: {
-        // Only use this in development if you have self-signed certs
         rejectUnauthorized: process.env.NODE_ENV === "production",
       },
-      logger: process.env.NODE_ENV !== "production", // log only in dev
-      debug: process.env.NODE_ENV !== "production", // debug only in dev
+      logger: process.env.NODE_ENV !== "production",
+      debug: process.env.NODE_ENV !== "production",
     });
 
     await transporter.verify();
