@@ -60,7 +60,7 @@ export const getMailTransporter = async (fullEmail) => {
       logger: process.env.NODE_ENV !== "production",
       debug: process.env.NODE_ENV !== "production",
     });
-    console.log("Transporter created successfully for:", transporter);
+    console.log("Transporter created successfully for:", transporter.options);
 
     await transporter.verify();
     console.log("SMTP connection verified successfully");
