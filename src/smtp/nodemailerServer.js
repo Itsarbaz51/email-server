@@ -27,7 +27,7 @@ export const getMailTransporter = async (fullEmail) => {
 
     // 👇 Decrypt the encrypted password from DB
     const decryptedPassword = decrypt(mailbox.smtpPasswordEncrypted);
-    console.log(mailbox.password);
+    console.log(decrypt(mailbox.password));
 
     console.log("Plain SMTP Password:", decryptedPassword);
 
