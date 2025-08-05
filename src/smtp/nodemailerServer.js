@@ -62,7 +62,7 @@ export const getMailTransporter = async (fullEmail) => {
     });
     console.log("Transporter created successfully for:", transporter.options);
 
-    // await transporter.verify();
+    await transporter.verify();
     console.log("SMTP connection verified successfully");
     return transporter;
   } catch (error) {
