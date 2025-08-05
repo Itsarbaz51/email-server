@@ -1,8 +1,9 @@
 import Prisma from "../db/db.js";
 import nodemailer from "nodemailer";
 import { decrypt } from "../utils/encryption.js"; // wherever you have it
+import { comparePassword } from "../utils/utils.js";
 
-export const getMailTransporter = async (fullEmail) => {
+export const getMailTransporter = async (fullEmail, rawPassword) => {
   try {
     const mailbox = await Prisma.mailbox.findFirst({
       where: {
@@ -27,7 +28,7 @@ export const getMailTransporter = async (fullEmail) => {
 
     // 👇 Decrypt the encrypted password from DB
     const decryptedPassword = decrypt(mailbox.smtpPasswordEncrypted);
-    console.log(decrypt(mailbox.password));
+    console.log(comparePassword(rawPassword, mailbox.password));
 
     console.log("Plain SMTP Password:", decryptedPassword);
 
