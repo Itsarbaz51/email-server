@@ -25,14 +25,11 @@ const generateDKIMKeys = () => {
   };
 };
 
-const normalizeTxt = (txt) =>
-  txt.replace(/"/g, "").replace(/\s+/g, "").trim().toLowerCase();
-
 export const generateDNSRecords = asyncHandler(async (req, res) => {
   const { domain } = req.body;
   const currentUserId = req.user.id;
 
-  if (!domain) ApiError.send(res, 400, "Domain is required");
+  if (!domain) return ApiError.send(res, 400, "Domain is required");
 
   const existingDomain = await Prisma.domain.findFirst({
     where: { name: domain, adminId: currentUserId },
@@ -43,10 +40,8 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     return ApiError.send(res, 400, "Domain already exists");
   }
 
-  // Generate DKIM Key Pair
   const dkimKeys = generateDKIMKeys();
 
-  // ✅ Create new domain including public key
   const newDomain = await Prisma.domain.create({
     data: {
       name: domain,
@@ -56,6 +51,12 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       dkimSelector: DKIM_SELECTOR,
     },
   });
+
+  const formattedPublicKey = dkimKeys.publicKey
+    .match(/.{1,255}/g)
+    .map((chunk) => `"${chunk}"`)
+    .join(" ");
+
   const recordsToCreate = [
     {
       type: "A",
@@ -66,20 +67,20 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "MX",
       name: "@",
-      value: "mail.primewebdev.in",
+      value: `mail.${domain}`,
       priority: 10,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: "@",
-      value: `v=spf1 a mx ip4:${process.env.SERVER_IP} ~all`,
+      value: `v=spf1 ip4:${process.env.SERVER_IP} -all`,
       domainId: newDomain.id,
     },
     {
       type: "TXT",
       name: `${DKIM_SELECTOR}._domainkey`,
-      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey.replace(/\n/g, "").replace(/\r/g, "").trim()}`,
+      value: `v=DKIM1; k=rsa; p=${formattedPublicKey}`,
       domainId: newDomain.id,
     },
     {
@@ -119,9 +120,9 @@ const verifyDNSRecord = async (domainId, recordType) => {
     },
   });
 
-  if (!domain) ApiError.send(res, "Domain not found", 404);
+  if (!domain) throw new ApiError(404, "Domain not found");
   if (!domain.dnsRecords.length)
-    ApiError.send(res, `No ${recordType} records found`, 404);
+    throw new ApiError(404, `No ${recordType} records found`);
 
   const results = [];
 
@@ -138,16 +139,17 @@ const verifyDNSRecord = async (domainId, recordType) => {
       } else if (recordType === "TXT") {
         const txtRecords = await dns.resolveTxt(lookupName);
         rawRecords = txtRecords.map((r) => r.join("").trim());
+      } else if (recordType === "A") {
+        const aRecords = await dns.resolve4(lookupName);
+        rawRecords = aRecords.map((ip) => ip.trim());
       }
 
       const expected = record.value.trim();
-
-      const matched = rawRecords.some((r) => {
-        if (recordType === "TXT") {
-          return normalizeTxt(r) === normalizeTxt(expected);
-        }
-        return r === expected;
-      });
+      const matched = rawRecords.some((r) =>
+        recordType === "TXT"
+          ? normalizeTxt(r) === normalizeTxt(expected)
+          : r === expected
+      );
 
       if (!matched && rawRecords.length > 0) {
         await Prisma.dnsRecord.update({
@@ -180,7 +182,7 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
   const { id: domainId } = req.params;
   const type = req.query.type?.toUpperCase();
 
-  if (!domainId) ApiError.send(res, 400, "Domain ID is required");
+  if (!domainId) return ApiError.send(res, 400, "Domain ID is required");
 
   try {
     if (type) {
@@ -198,7 +200,7 @@ export const verifyDnsHandler = asyncHandler(async (req, res) => {
       );
     }
 
-    const types = ["MX", "TXT"];
+    const types = ["A", "MX", "TXT"];
     const allResults = await Promise.all(
       types.map((t) => verifyDNSRecord(domainId, t))
     );
