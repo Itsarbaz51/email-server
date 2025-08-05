@@ -85,7 +85,7 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     {
       type: "TXT",
       name: "_dmarc",
-      value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
+      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`,
       domainId: newDomain.id,
     },
   ];
