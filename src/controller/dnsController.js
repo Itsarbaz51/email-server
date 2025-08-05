@@ -62,31 +62,59 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       name: "mail",
       value: process.env.SERVER_IP,
       domainId: newDomain.id,
+      ttl: 300, // Reduced TTL for faster updates
+    },
+    {
+      type: "A",
+      name: "@", // Root domain A record
+      value: process.env.SERVER_IP,
+      domainId: newDomain.id,
+      ttl: 300,
     },
     {
       type: "MX",
       name: "@",
-      value: "mail.primewebdev.in",
+      value: `mail.${domain}`, // Use dynamic domain instead of hardcoded
       priority: 10,
       domainId: newDomain.id,
+      ttl: 300,
     },
     {
       type: "TXT",
       name: "@",
-      value: `v=spf1 a mx ip4:${process.env.SERVER_IP} ~all`,
+      value: `v=spf1 mx ip4:${process.env.SERVER_IP} -all`, // Strict policy (-all)
       domainId: newDomain.id,
+      ttl: 300,
     },
     {
       type: "TXT",
       name: `${DKIM_SELECTOR}._domainkey`,
-      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey.replace(/\n/g, "").replace(/\r/g, "").trim()}`,
+      value: `v=DKIM1; k=rsa; p=${dkimKeys.publicKey
+        .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
+        .trim()}`, // Keep proper formatting
       domainId: newDomain.id,
+      ttl: 300,
     },
     {
       type: "TXT",
       name: "_dmarc",
-      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`,
+      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}; ruf=mailto:dmarc@${domain}; fo=1`, // Added forensic reporting
       domainId: newDomain.id,
+      ttl: 300,
+    },
+    {
+      type: "CNAME",
+      name: "smtp",
+      value: `mail.${domain}`, // Additional CNAME for SMTP
+      domainId: newDomain.id,
+      ttl: 300,
+    },
+    {
+      type: "CNAME",
+      name: "imap",
+      value: `mail.${domain}`, // Additional CNAME for IMAP
+      domainId: newDomain.id,
+      ttl: 300,
     },
   ];
 
