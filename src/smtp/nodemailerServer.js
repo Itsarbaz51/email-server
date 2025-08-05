@@ -3,7 +3,9 @@ import nodemailer from "nodemailer";
 import { decrypt } from "../utils/encryption.js"; // wherever you have it
 import { comparePassword } from "../utils/utils.js";
 
-export const getMailTransporter = async (fullEmail, rawPassword) => {
+export const getMailTransporter = async (fullEmail) => {
+  console.log("Creating transporter for:", fullEmail);
+  
   try {
     const mailbox = await Prisma.mailbox.findFirst({
       where: {
@@ -21,14 +23,20 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
       },
     });
 
+    console.log("Mailbox found:", mailbox);
     if (!mailbox) throw new Error("Mailbox not found");
     if (!mailbox.domain?.dkimPrivateKey) throw new Error("DKIM not configured");
 
     const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
+    if (!dkimPrivateKey) {
+      throw new Error("DKIM private key is missing for domain: " + domainName);
+    }
+    console.log("Using DKIM for domain:", domainName);
+    console.log("DKIM Selector:", dkimSelector || "dkim");
+    console.log("DKIM Private Key Length:", dkimPrivateKey.length);
 
     // 👇 Decrypt the encrypted password from DB
     const decryptedPassword = decrypt(mailbox.smtpPasswordEncrypted);
-    console.log(comparePassword(rawPassword, mailbox.password));
 
     console.log("Plain SMTP Password:", decryptedPassword);
 
@@ -52,6 +60,7 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
       logger: process.env.NODE_ENV !== "production",
       debug: process.env.NODE_ENV !== "production",
     });
+    console.log("Transporter created successfully for:", transporter);
 
     await transporter.verify();
     console.log("SMTP connection verified successfully");
