@@ -57,7 +57,7 @@ const sendEmail = asyncHandler(async (req, res) => {
 
   const transporter = await getMailTransporter(from, rawPassword);
   console.log("Transporter created for:", fromMailbox.address);
-  
+
   const mailOptions = {
     from: fromMailbox.address,
     to,
@@ -65,7 +65,7 @@ const sendEmail = asyncHandler(async (req, res) => {
     html: body,
     attachments,
   };
-
+  console.log("Sending email with options:", mailOptions);
   const info = await transporter.sendMail(mailOptions);
   console.log("✅ Email sent:", info.messageId);
 
