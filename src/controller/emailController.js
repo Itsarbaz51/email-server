@@ -67,6 +67,7 @@ const sendEmail = asyncHandler(async (req, res) => {
   };
   console.log("Sending email with options:", mailOptions);
   const info = await transporter.sendMail(mailOptions);
+  console.log("✅ Email sent:", info);
   console.log("✅ Email sent:", info.messageId);
 
   const toMailbox = await Prisma.mailbox.findFirst({
