@@ -1,20 +1,11 @@
 import Prisma from "../db/db.js";
 import { simpleParser } from "mailparser";
-import fs from "fs";
 import { decrypt } from "../utils/encryption.js";
 
 export const serverOptions = {
   authOptional: false, // Require auth for all connections
   allowInsecureAuth: false,
-  key: fs.readFileSync("/etc/letsencrypt/live/mail.primewebdev.in/privkey.pem"),
-  cert: fs.readFileSync(
-    "/etc/letsencrypt/live/mail.primewebdev.in/fullchain.pem"
-  ),
-  secure: false, // Use STARTTLS
-  hideSTARTTLS: false, // Explicitly show we support STARTTLS
-  logger: true, // Enable verbose logging
-
-  // Enhanced auth handler
+  
   onAuth(auth, session, callback) {
     const { username, password } = auth;
     console.log(`🔐 Auth attempt for: ${username}`);

@@ -7,10 +7,7 @@ import { authMiddleware } from "../middlewares/authMiddleware.js";
 
 const router = Router();
 
-// POST /dns - generate DKIM, SPF, DMARC, A, MX records
-router.post("/dns", authMiddleware, generateDNSRecords);
-
-// GET /dns/:id/verify?type=TXT|A|MX - verify DNS records
-router.get("/dns/:id/verify", authMiddleware, verifyDnsHandler);
+router.post("/generate-dns-records", authMiddleware, generateDNSRecords);
+router.get("/verify-dns-record/:id", verifyDnsHandler);
 
 export default router;

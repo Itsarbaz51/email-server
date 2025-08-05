@@ -9,104 +9,142 @@ import { getMailTransporter } from "../smtp/nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
 
 const sendEmail = asyncHandler(async (req, res) => {
+  console.log("sendEmail called with:", req.body);
+
   const { from, to, subject, body } = req.body;
   const files = req.files || [];
   const senderMailboxId = req.mailbox?.id;
 
   if (!from || !to || !subject || !body) {
-    return ApiError.send(res, 400, "from, to, subject, and body are required.");
+    return ApiError.send(
+      res,
+      400,
+      "All fields (from, to, subject, body) are required"
+    );
   }
 
   if (!senderMailboxId) {
-    return ApiError.send(res, 403, "Sender mailbox not authenticated.");
+    return ApiError.send(res, 403, "Sender mailbox not identified.");
   }
 
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
       address: from.toLowerCase(),
-      domain: { verified: true },
+      domain: {
+        verified: true,
+      },
     },
-    include: { domain: true },
+    include: {
+      domain: true,
+    },
   });
 
-  if (!fromMailbox || !fromMailbox.smtpPasswordEncrypted) {
-    return ApiError.send(res, 403, "Invalid sender or SMTP password missing.");
+  if (!fromMailbox) {
+    return ApiError.send(res, 403, "Unauthorized sender or unverified domain.");
+  }
+
+  if (!fromMailbox.smtpPasswordEncrypted) {
+    return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
   }
 
   const rawPassword = decrypt(fromMailbox.smtpPasswordEncrypted);
   if (!rawPassword) {
-    return ApiError.send(res, 500, "Failed to decrypt SMTP password.");
+    return ApiError.send(res, 500, "SMTP password decryption failed.");
   }
 
   const attachments = [];
-  const uploadDir = path.join(process.cwd(), "uploads");
-  await fs.mkdir(uploadDir, { recursive: true });
+  if (files.length > 0) {
+    const uploadDir = path.join(process.cwd(), "uploads");
+    await fs.mkdir(uploadDir, { recursive: true });
 
-  for (const file of files) {
-    const fileName = `${uuidv4()}${path.extname(file.originalname)}`;
-    const savePath = path.join(uploadDir, fileName);
-    await fs.writeFile(savePath, file.buffer);
+    for (const file of files) {
+      const fileExt = path.extname(file.originalname);
+      const fileName = `${uuidv4()}${fileExt}`;
+      const savePath = path.join(uploadDir, fileName);
+      await fs.writeFile(savePath, file.buffer);
 
-    attachments.push({
-      filename: file.originalname,
-      path: savePath,
-      contentType: file.mimetype,
-    });
+      attachments.push({
+        filename: file.originalname,
+        path: savePath,
+        contentType: file.mimetype,
+      });
+    }
   }
 
-  const transporter = await getMailTransporter(from, rawPassword);
-  console.log("Transporter created for:", fromMailbox.address);
+  try {
+    console.log(`Attempting to send email from ${from} to ${to}`);
+    const transporter = await getMailTransporter(from, rawPassword);
 
-  const mailOptions = {
-    from: fromMailbox.address,
-    to,
-    subject,
-    html: body,
-    attachments,
-  };
-  console.log("Sending email with options:", mailOptions);
-  const info = await transporter.sendMail(mailOptions);
-  console.log("✅ Email sent:", info);
-  console.log("✅ Email sent:", info.messageId);
-
-  const toMailbox = await Prisma.mailbox.findFirst({
-    where: {
-      address: to.toLowerCase(),
-      domain: { verified: true },
-    },
-  });
-
-  if (toMailbox) {
-    const message = await Prisma.message.create({
-      data: {
-        from,
-        to,
-        subject,
-        body,
-        mailboxId: toMailbox.id,
-        attachments: {
-          create: attachments.map((att) => ({
-            fileName: att.filename,
-            fileType: att.contentType,
-            fileUrl: `/uploads/${path.basename(att.path)}`,
-          })),
-        },
-      },
-      include: { attachments: true },
-    });
-
-    return res
-      .status(201)
-      .json(new ApiResponse(201, "Email sent and stored", message));
-  }
-
-  return res.status(201).json(
-    new ApiResponse(201, "Email sent", {
+    const mailOptions = {
+      from: `${fromMailbox.address}`,
+      to,
+      subject,
+      html: body,
+      attachments,
+    };
+    console.log("Transporter created, sending mail...");
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Email sent successfully:", {
       messageId: info.messageId,
       envelope: info.envelope,
-    })
-  );
+      accepted: info.accepted,
+      rejected: info.rejected,
+    });
+
+    const toMailbox = await Prisma.mailbox.findFirst({
+      where: {
+        address: to.toLowerCase(),
+        domain: {
+          verified: true,
+        },
+      },
+      include: {
+        domain: true,
+      },
+    });
+
+    if (toMailbox) {
+      const message = await Prisma.message.create({
+        data: {
+          from,
+          to,
+          subject,
+          body,
+          mailboxId: toMailbox.id,
+          attachments: {
+            create: attachments.map((att) => ({
+              fileName: att.filename,
+              fileType: att.contentType,
+              fileUrl: `/uploads/${path.basename(att.path)}`,
+            })),
+          },
+        },
+        include: {
+          attachments: true,
+        },
+      });
+
+      return res
+        .status(201)
+        .json(new ApiResponse(201, "Email sent and stored locally", message));
+    }
+
+    return res.status(201).json(
+      new ApiResponse(201, "Email sent successfully", {
+        messageId: info.messageId,
+        envelope: info.envelope,
+      })
+    );
+  } catch (error) {
+    console.error("Full send error:", {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      response: error.response,
+    });
+    throw error;
+  }
 });
 
 const getMessages = asyncHandler(async (req, res) => {

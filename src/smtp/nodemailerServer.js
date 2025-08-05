@@ -1,11 +1,7 @@
 import Prisma from "../db/db.js";
 import nodemailer from "nodemailer";
-import { decrypt } from "../utils/encryption.js"; // wherever you have it
-import { comparePassword } from "../utils/utils.js";
 
-export const getMailTransporter = async (fullEmail) => {
-  console.log("Creating transporter for:", fullEmail);
-  
+export const getMailTransporter = async (fullEmail, rawPassword) => {
   try {
     const mailbox = await Prisma.mailbox.findFirst({
       where: {
@@ -23,31 +19,19 @@ export const getMailTransporter = async (fullEmail) => {
       },
     });
 
-    console.log("Mailbox found:", mailbox);
     if (!mailbox) throw new Error("Mailbox not found");
     if (!mailbox.domain?.dkimPrivateKey) throw new Error("DKIM not configured");
 
     const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
-    if (!dkimPrivateKey) {
-      throw new Error("DKIM private key is missing for domain: " + domainName);
-    }
-    console.log("Using DKIM for domain:", domainName);
-    console.log("DKIM Selector:", dkimSelector || "dkim");
-    console.log("DKIM Private Key Length:", dkimPrivateKey.length);
-
-    // 👇 Decrypt the encrypted password from DB
-    const decryptedPassword = decrypt(mailbox.smtpPasswordEncrypted);
-
-    console.log("Plain SMTP Password:", decryptedPassword);
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || `mail.${domainName}`,
       port: Number(process.env.SMTP_PORT) || 587,
       secure: false, // Use STARTTLS on port 587
-      requireTLS: true,
+      requireTLS: true, // Enforce TLS
       auth: {
-        user: fullEmail.trim().toLowerCase(),
-        pass: decryptedPassword.trim(),
+        user: fullEmail.trim().toLowerCase(), // normalize email
+        pass: rawPassword,
       },
       dkim: dkimPrivateKey && {
         domainName,
@@ -55,12 +39,12 @@ export const getMailTransporter = async (fullEmail) => {
         privateKey: dkimPrivateKey,
       },
       tls: {
+        // Only use this in development if you have self-signed certs
         rejectUnauthorized: process.env.NODE_ENV === "production",
       },
-      logger: process.env.NODE_ENV !== "production",
-      debug: process.env.NODE_ENV !== "production",
+      logger: process.env.NODE_ENV !== "production", // log only in dev
+      debug: process.env.NODE_ENV !== "production", // debug only in dev
     });
-    console.log("Transporter created successfully for:", transporter.options);
 
     await transporter.verify();
     console.log("SMTP connection verified successfully");
