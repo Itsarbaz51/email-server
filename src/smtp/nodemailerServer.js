@@ -39,6 +39,14 @@ export const getMailTransporter = async (fullEmail) => {
     const smtpHost = process.env.SMTP_HOST || `mail.${domainName}`;
     const smtpPort = Number(process.env.SMTP_PORT) || 587;
     const isProduction = process.env.NODE_ENV === "production";
+    
+    console.log("SMTP Config:", {
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      user: fullEmail.trim(),
+      pass: decryptedPassword ? "****" : null,
+    });
 
     const transporterOptions = {
       host: smtpHost,
