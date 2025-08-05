@@ -61,6 +61,6 @@ export const getMailTransporter = async (fullEmail) => {
 // Example usage:
 (async () => {
   const emailToTest = "info@primewebdev.in";
-  const result = await verifySMTPCredentials(emailToTest);
+  const result = await getMailTransporter(emailToTest);
   console.log("Verification result:", result);
 })();
