@@ -83,7 +83,14 @@ const sendEmail = asyncHandler(async (req, res) => {
       html: body,
       attachments,
     };
-    console.log("Transporter created, sending mail...");
+    console.log("Attempting to send email with options:", {
+      from,
+      to,
+      subject,
+      host: transporter.options.host,
+      port: transporter.options.port,
+    });
+
     const info = await transporter.sendMail(mailOptions);
     console.log("Email sent successfully:", {
       messageId: info.messageId,
