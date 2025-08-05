@@ -56,6 +56,8 @@ const sendEmail = asyncHandler(async (req, res) => {
   }
 
   const transporter = await getMailTransporter(from, rawPassword);
+  console.log("Transporter created for:", fromMailbox.address);
+  
   const mailOptions = {
     from: fromMailbox.address,
     to,
