@@ -2,7 +2,7 @@ import Prisma from "../db/db.js";
 import nodemailer from "nodemailer";
 import { decrypt } from "../utils/encryption.js";
 
-export const verifySMTPCredentials = async (fullEmail) => {
+export const getMailTransporter = async (fullEmail) => {
   try {
     // 1. DB se mailbox fetch karo
     const mailbox = await Prisma.mailbox.findFirst({
