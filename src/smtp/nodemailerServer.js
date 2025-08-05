@@ -38,7 +38,7 @@ export const getMailTransporter = async (fullEmail) => {
       requireTLS: true,
       auth: {
         user: fullEmail.trim().toLowerCase(),
-        pass: rawPassword,
+        pass: decryptedPassword.trim(),
       },
       dkim: dkimPrivateKey && {
         domainName,
