@@ -1,6 +1,5 @@
 import { simpleParser } from "mailparser";
-import  Prisma from "../db/db.js";
-
+import Prisma from "../db/db.js";
 
 export const serverOptions = {
   authOptional: true,
@@ -125,14 +124,9 @@ export const serverOptions = {
                   data: {
                     from: session.envelope.mailFrom.address,
                     to,
-                    subject:
-                      parsed.subject?.substring(0, 255) || "(No Subject)", // Limit subject length
-                    text: parsed.text?.substring(0, 10000) || "", // Limit text length
-                    html: parsed.html?.substring(0, 50000) || "", // Limit HTML length
-                    raw: rawEmail.toString("utf-8").slice(0, 100000), // Limit raw email size
+                    subject: parsed.subject || "(No Subject)", // Limit subject length
+                    body: parsed.text || "", // Limit HTML length
                     mailboxId: mailbox.id,
-                    isRead: false,
-                    receivedAt: new Date(),
                   },
                 });
                 console.log(`📨 Stored message for ${to}`);
