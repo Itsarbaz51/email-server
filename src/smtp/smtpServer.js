@@ -1,29 +1,22 @@
 export const serverOptions = {
-  authOptional: true, // बाहरी मेल के लिए ऑथेंटिकेशन ऑप्शनल बनाया
-  secure: false,
-  disabledCommands: [],
-  banner: "Welcome to My Mail Server",
-  logger: true, // विस्तृत लॉगिंग के लिए
+  authOptional: true, // बाहरी मेल सर्वर्स के लिए ऑथेंटिकेशन ऑप्शनल
 
   // ऑथेंटिकेशन हेंडलर
   async onAuth(auth, session, callback) {
     // बाहरी मेल सर्वर्स के लिए ऑथेंटिकेशन नहीं मांगेगा
     if (!auth) {
-      session.anonymous = true; // यह एक बाहरी कनेक्शन है
+      session.anonymous = true;
       return callback(null, {});
     }
 
+    // आपके अपने यूजर्स के लिए ऑथेंटिकेशन
     try {
-      console.log(`Auth attempt: ${auth.method}`);
-
       if (auth.method !== "PLAIN" && auth.method !== "LOGIN") {
         return callback(new Error("Only PLAIN/LOGIN auth supported"));
       }
 
       const credentials = Buffer.from(auth.password, "base64").toString("utf8");
       const [username, password] = credentials.split("\x00").slice(1);
-
-      console.log(`Auth attempt for: ${username}`);
 
       const user = await Prisma.mailbox.findFirst({
         where: {
@@ -34,14 +27,12 @@ export const serverOptions = {
       });
 
       if (!user) {
-        console.log("Invalid credentials");
         return callback(new Error("Invalid credentials"));
       }
 
       session.user = user;
       callback(null, { user: username });
     } catch (err) {
-      console.error("Auth error:", err);
       callback(new Error("Authentication failed"));
     }
   },
@@ -49,13 +40,13 @@ export const serverOptions = {
   // मेल फ्रॉम वैलिडेशन
   async onMailFrom(address, session, callback) {
     try {
-      // सिर्फ लोकल यूजर्स के लिए ऑथेंटिकेशन चेक करें
+      // सिर्फ आपके अपने यूजर्स के लिए ऑथेंटिकेशन चेक करें
       if (!session.anonymous && !session.user) {
         return callback(new Error("Authentication required for sending"));
       }
 
-      const fromEmail = address.address.toLowerCase();
-      console.log(`✉️ Mail from ${fromEmail}`);
+      // बाहरी मेल के लिए कोई ऑथेंटिकेशन नहीं
+      console.log(`✉️ Mail from ${address.address}`);
       callback();
     } catch (err) {
       callback(err);
