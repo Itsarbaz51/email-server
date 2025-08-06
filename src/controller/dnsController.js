@@ -1,9 +1,9 @@
 import dns from "dns/promises";
 import crypto from "crypto";
-import { Prisma } from "../db/db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
+import Prisma from "../db/db.js";
 
 const DKIM_SELECTOR = "default";
 const SERVER_IP = process.env.SERVER_IP;
