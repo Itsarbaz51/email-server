@@ -1,92 +1,113 @@
-import Prisma from "../db/db.js";
-import { simpleParser } from "mailparser";
-import { decrypt } from "../utils/encryption.js";
+// smtpServer.js
+import Prisma from "./db/db.js";
+import crypto from "crypto";
+import { decrypt } from "./utils/encryption.js";
+
+// Safe timing comparison with logging
+const safeCompare = (a, b) => {
+  if (typeof a !== "string" || typeof b !== "string") {
+    console.log("❌ safeCompare: One or both values not strings");
+    return false;
+  }
+
+  const bufferA = Buffer.from(a);
+  const bufferB = Buffer.from(b);
+
+  if (bufferA.length !== bufferB.length) {
+    console.log("❌ safeCompare: Buffer lengths differ");
+    return false;
+  }
+
+  try {
+    return crypto.timingSafeEqual(bufferA, bufferB);
+  } catch (err) {
+    console.error("❌ safeCompare error:", err);
+    return false;
+  }
+};
 
 export const serverOptions = {
-  authOptional: false, // Require auth for all connections
+  authOptional: false,
   allowInsecureAuth: false,
-  
-  onAuth(auth, session, callback) {
+
+  async onAuth(auth, session, callback) {
     const { username, password } = auth;
-    console.log(`🔐 Auth attempt for: ${username}`);
 
-    Prisma.mailbox
-      .findFirst({
+    console.log(`🔐 Auth attempt`);
+    console.log("👤 Username received:", username);
+    console.log("🔑 Password received:", password);
+
+    try {
+      const mailbox = await Prisma.mailbox.findFirst({
         where: {
-          address: username.toLowerCase(),
+          address: username?.toLowerCase(),
           smtpPasswordEncrypted: { not: null },
-          domain: { verified: true },
+          domain: { is: { verified: true } },
         },
-      })
-      .then((mailbox) => {
-        if (!mailbox) {
-          console.log(`❌ Mailbox not found: ${username}`);
-          return callback(new Error("Invalid credentials"));
-        }
-
-        const decrypted = decrypt(mailbox.smtpPasswordEncrypted);
-        if (password === decrypted) {
-          session.relaying = true;
-          console.log(`✅ Authenticated: ${username}`);
-          return callback(null, { user: mailbox });
-        } else {
-          console.log(`❌ Invalid password for: ${username}`);
-          return callback(new Error("Invalid credentials"));
-        }
-      })
-      .catch((err) => {
-        console.error("Auth error:", err);
-        callback(new Error("Authentication failed"));
       });
+
+      if (!mailbox) {
+        console.log("❌ Auth failed: Mailbox not found or domain not verified");
+        return callback(new Error("Invalid credentials"));
+      }
+
+      const decrypted = decrypt(mailbox.smtpPasswordEncrypted);
+
+      console.log("🔓 Decrypted password from DB:", decrypted);
+
+      const match = safeCompare(password, decrypted);
+
+      if (match) {
+        console.log(`✅ Auth success for: ${username}`);
+        session.relaying = true;
+        return callback(null, { user: mailbox });
+      } else {
+        console.log(`❌ Auth failed: Password mismatch for ${username}`);
+        return callback(new Error("Invalid credentials"));
+      }
+    } catch (err) {
+      console.error("❌ Auth error:", err);
+      return callback(new Error("Authentication failed"));
+    }
   },
 
   onConnect(session, callback) {
-    console.log(`📡 New connection from: ${session.remoteAddress}`);
-    if (session.remoteAddress === "127.0.0.1") {
-      session.relaying = true;
-    }
+    console.log(`📡 New SMTP connection from ${session.remoteAddress}`);
     callback();
   },
 
   onMailFrom(address, session, callback) {
-    const mailFrom = address?.address?.toLowerCase?.();
-    if (!mailFrom) return callback(new Error("Invalid MAIL FROM"));
-
-    console.log(`📨 MAIL FROM: ${mailFrom}`);
     session.envelope = session.envelope || {};
-    session.envelope.mailFrom = mailFrom;
+    session.envelope.mailFrom = address?.address?.toLowerCase?.();
+    console.log(`📨 MAIL FROM: ${session.envelope.mailFrom}`);
     callback();
   },
 
   onRcptTo(address, session, callback) {
-    let to = typeof address === "string" ? address : address?.address;
-
-    if (!to || !to.includes("@")) {
-      return callback(new Error("Invalid RCPT TO"));
-    }
-
-    to = to.toLowerCase();
-    console.log(`📥 RCPT TO: ${to}`);
+    const to = address?.address?.toLowerCase?.();
+    if (!to || !to.includes("@")) return callback(new Error("Invalid RCPT TO"));
 
     session.envelope = session.envelope || {};
     session.envelope.rcptTo = session.envelope.rcptTo || [];
-
-    // 👇 Store as object, not string
     session.envelope.rcptTo.push({ address: to });
-
+    console.log(`📥 RCPT TO: ${to}`);
     callback();
   },
+
   async onData(stream, session, callback) {
-    console.log("📬 Processing email data...");
     try {
       const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
+      let size = 0;
+
+      for await (const chunk of stream) {
+        size += chunk.length;
+        if (size > 10 * 1024 * 1024)
+          return callback(new Error("Email too large")); // 10MB limit
+        chunks.push(chunk);
+      }
+
       const rawEmail = Buffer.concat(chunks);
       const parsed = await simpleParser(rawEmail);
-
-      console.log(
-        `📧 Email received from ${session.envelope.mailFrom?.address} to ${session.envelope.rcptTo.map((r) => r.address).join(", ")}`
-      );
 
       for (const rcpt of session.envelope.rcptTo) {
         const to = rcpt.address.toLowerCase();
@@ -96,8 +117,10 @@ export const serverOptions = {
           where: {
             address: to,
             domain: {
-              name: domain,
-              verified: true,
+              is: {
+                name: domain,
+                verified: true,
+              },
             },
           },
         });
@@ -105,20 +128,22 @@ export const serverOptions = {
         if (mailbox) {
           await Prisma.message.create({
             data: {
-              from: session.envelope.mailFrom?.address || "",
+              from: session.envelope.mailFrom || "",
               to,
-              subject: parsed.subject || "(No Subject)",
-              body: parsed.text || "",
+              subject: parsed.subject?.trim() || "(No Subject)",
+              body: parsed.text?.trim() || parsed.html || "(Empty)",
+              raw: rawEmail.toString("utf-8"),
               mailboxId: mailbox.id,
             },
           });
-          console.log(`✅ Stored local email for: ${to}`);
+
+          console.log(`✅ Stored email for ${to}`);
         }
       }
 
       callback();
     } catch (err) {
-      console.error("❌ Email processing failed:", err);
+      console.error("❌ Error processing email:", err);
       callback(err);
     }
   },
