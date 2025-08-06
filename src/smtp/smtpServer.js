@@ -1,83 +1,151 @@
 export const serverOptions = {
-  authOptional: true, 
+  authOptional: true,
+  allowInsecureAuth: true,
 
-
-  // मेल फ्रॉम वैलिडेशन
-  async onMailFrom(address, session, callback) {
-    // बाहरी मेल के लिए कोई ऑथेंटिकेशन नहीं
-    console.log(`✉️ Mail from ${address.address}`);
+  onConnect(session, callback) {
+    console.log("📡 Client connected", session.id);
     callback();
   },
 
-  // रिसिपिएंट वैलिडेशन
+  // Mail from validation
+  async onMailFrom(address, session, callback) {
+    try {
+      if (!address || !address.address) {
+        return callback(new Error("Invalid sender address"));
+      }
+
+      console.log(`✉️ Mail from ${address.address}`);
+      callback();
+    } catch (err) {
+      console.error("MailFrom error:", err);
+      callback(err);
+    }
+  },
+
+  // Recipient validation
   async onRcptTo(address, session, callback) {
     try {
-      const to = address?.address?.toLowerCase?.();
+      const to = address?.address?.toLowerCase();
 
       if (!to || !to.includes("@")) {
-        return callback(new Error("Invalid Email address"));
+        return callback(new Error("Invalid recipient address format"));
+      }
+
+      const [localPart, domain] = to.split("@");
+      if (!localPart || !domain) {
+        return callback(new Error("Invalid email address structure"));
       }
 
       const existingMailbox = await Prisma.mailbox.findFirst({
         where: {
           address: to,
-          domain: { is: { verified: true } },
+          domain: {
+            is: {
+              domain: domain,
+              verified: true,
+            },
+          },
+        },
+        select: {
+          id: true,
+          address: true,
         },
       });
 
       if (!existingMailbox) {
-        return callback(new Error("Recipient mailbox not found"));
+        console.log(`❌ Recipient not found: ${to}`);
+        return callback(
+          new Error("Recipient mailbox not found or domain not verified")
+        );
       }
 
+      console.log(`✅ Valid recipient: ${to}`);
       callback();
     } catch (err) {
+      console.error("RcptTo error:", err);
       callback(err);
     }
   },
 
-  // डेटा प्रोसेसिंग
+  // Data processing
   async onData(stream, session, callback) {
     try {
-      let rawEmail = Buffer.from([]);
+      let rawEmail = Buffer.alloc(0);
+      let emailSize = 0;
+      const maxEmailSize = 25 * 1024 * 1024; // 25MB limit
 
       stream.on("data", (chunk) => {
+        emailSize += chunk.length;
+        if (emailSize > maxEmailSize) {
+          stream.destroy(new Error("Email size exceeds limit"));
+          return;
+        }
         rawEmail = Buffer.concat([rawEmail, chunk]);
+      });
+
+      stream.on("error", (err) => {
+        console.error("Stream error:", err);
+        callback(err);
       });
 
       stream.on("end", async () => {
         try {
+          if (emailSize === 0) {
+            return callback(new Error("Empty email received"));
+          }
+
           const parsed = await simpleParser(rawEmail);
 
-          for (const rcpt of session.envelope.rcptTo) {
-            const to = rcpt.address.toLowerCase();
-            const mailbox = await Prisma.mailbox.findFirst({
-              where: {
-                address: to,
-                domain: { verified: true },
-              },
-            });
+          // Validate essential email fields
+          if (!parsed.from || !parsed.from.text) {
+            return callback(new Error("Missing sender information"));
+          }
 
-            if (mailbox) {
-              await Prisma.message.create({
-                data: {
-                  from: session.envelope.mailFrom.address,
-                  to,
-                  subject: parsed.subject || "(No Subject)",
-                  text: parsed.text || "",
-                  html: parsed.html || "",
-                  raw: rawEmail.toString("utf-8"),
-                  mailboxId: mailbox.id,
-                  isRead: false,
-                  receivedAt: new Date(),
+          // Process each recipient
+          for (const rcpt of session.envelope.rcptTo) {
+            try {
+              const to = rcpt.address.toLowerCase();
+
+              const mailbox = await Prisma.mailbox.findFirst({
+                where: {
+                  address: to,
+                  domain: { verified: true },
+                },
+                select: {
+                  id: true,
                 },
               });
-              console.log(`📨 Stored message for ${to}`);
+
+              if (mailbox) {
+                await Prisma.message.create({
+                  data: {
+                    from: session.envelope.mailFrom.address,
+                    to,
+                    subject:
+                      parsed.subject?.substring(0, 255) || "(No Subject)", // Limit subject length
+                    text: parsed.text?.substring(0, 10000) || "", // Limit text length
+                    html: parsed.html?.substring(0, 50000) || "", // Limit HTML length
+                    raw: rawEmail.toString("utf-8").slice(0, 100000), // Limit raw email size
+                    mailboxId: mailbox.id,
+                    isRead: false,
+                    receivedAt: new Date(),
+                  },
+                });
+                console.log(`📨 Stored message for ${to}`);
+              }
+            } catch (recipientErr) {
+              console.error(
+                `Error processing recipient ${rcpt.address}:`,
+                recipientErr
+              );
+              // Continue with next recipient even if one fails
             }
           }
+
           callback();
-        } catch (err) {
-          console.error("Error processing email:", err);
-          callback(err);
+        } catch (parseErr) {
+          console.error("Email parsing error:", parseErr);
+          callback(new Error("Failed to process email content"));
         }
       });
     } catch (err) {
