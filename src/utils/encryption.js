@@ -1,8 +1,15 @@
 import crypto from "crypto";
 
 const ALGORITHM = "aes-256-cbc";
-const KEY = crypto.scryptSync(process.env.ENCRYPTION_SECRET, "salt", 32);
 const IV_LENGTH = 16; // For AES, this is always 16
+
+// Ensure secret is defined
+const ENCRYPTION_SECRET = process.env.ENCRYPTION_SECRET;
+if (!ENCRYPTION_SECRET) {
+  throw new Error("Missing ENCRYPTION_SECRET in environment variables.");
+}
+
+const KEY = crypto.scryptSync(ENCRYPTION_SECRET, "salt", 32);
 
 export function encrypt(text) {
   const iv = crypto.randomBytes(IV_LENGTH);
