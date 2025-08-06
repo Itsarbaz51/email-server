@@ -1,51 +1,37 @@
 import dotenv from "dotenv";
-import app from "./app.js";
-import Prisma from "./db/db.js";
 import { SMTPServer } from "smtp-server";
+import { Prisma } from "./db/db.js";
 import { serverOptions } from "./smtp/smtpServer.js";
+import app from "./app.js";
 
 dotenv.config({ path: "./.env" });
 
 (async function main() {
   try {
+    console.log("Connecting to database...");
     await Prisma.$connect();
-    console.log("✅ DATABASE CONNECTED SUCCESSFULLY");
+    console.log("✅ Database connected");
 
-    // SMTP Submission Server (port 587)
-    const submissionServer = new SMTPServer({
+    // SMTP सर्वर कॉन्फिगरेशन
+    const smtpServer = new SMTPServer({
       ...serverOptions,
-      name: "submission",
-      authMethods: ["PLAIN", "LOGIN"],
-      onConnect(session, callback) {
-        console.log(`📡 Submission client connected: ${session.remoteAddress}`);
-        serverOptions.onConnect(session, callback);
-      },
+      name: "my-mail-server",
+      banner: "Welcome to My Mail Server",
+      logger: true,
     });
 
-    // Error handling
-    submissionServer.on("error", (err) => {
-      console.error("❌ Submission server error:", err);
+    smtpServer.on("error", (err) => {
+      console.error("SMTP Server Error:", err);
     });
 
-    // Start Submission Server only (Postfix handles relay on port 25)
-    submissionServer.listen(587, "0.0.0.0", () => {
-      console.log("📤 Submission server running on port 587");
+    // पोर्ट 25 पर सर्वर स्टार्ट करें
+    smtpServer.listen(25, "0.0.0.0", () => {
+      console.log("🚀 SMTP server running on port 25");
     });
 
-    // Start HTTP API Server
-    const PORT = process.env.PORT || 9000;
-    app.listen(PORT, () => {
-      console.log(`🚀 HTTP server running on port ${PORT}`);
-    });
-
-    // Graceful shutdown
-    process.on("SIGTERM", async () => {
-      console.log("🛑 Shutting down gracefully...");
-      await Promise.all([
-        new Promise((res) => submissionServer.close(res)),
-        Prisma.$disconnect(),
-      ]);
-      process.exit(0);
+    // HTTP API सर्वर
+    app.listen(9000, "0.0.0.0", () => {
+      console.log("🚀 HTTP server running on port 9000");
     });
   } catch (error) {
     console.error("❌ Server startup failed:", error);

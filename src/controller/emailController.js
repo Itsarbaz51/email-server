@@ -5,114 +5,81 @@ import path from "path";
 import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import Prisma from "../db/db.js";
-import { getMailTransporter } from "../smtp/nodemailerServer.js";
+import { getMailTransporter } from "./nodemailerServer.js";
 import { decrypt } from "../utils/encryption.js";
 
-const sendEmail = asyncHandler(async (req, res) => {
-  console.log("sendEmail called with:", req.body);
+export const sendEmail = asyncHandler(async (req, res) => {
+  console.log("Send email request received:", req.body);
 
   const { from, to, subject, body } = req.body;
   const files = req.files || [];
   const senderMailboxId = req.mailbox?.id;
 
-  if (!from || !to || !subject || !body) {
-    return ApiError.send(
-      res,
-      400,
-      "All fields (from, to, subject, body) are required"
-    );
+  // Validate input
+  if (!from || !to || !subject || !body || !senderMailboxId) {
+    throw new ApiError(400, "Missing required fields");
   }
 
-  if (!senderMailboxId) {
-    return ApiError.send(res, 403, "Sender mailbox not identified.");
-  }
-
+  // Verify sender
   const fromMailbox = await Prisma.mailbox.findFirst({
     where: {
       id: senderMailboxId,
       address: from.toLowerCase(),
-      domain: {
-        verified: true,
-      },
-    },
-    include: {
-      domain: true,
+      domain: { verified: true },
     },
   });
 
-  if (!fromMailbox) {
-    return ApiError.send(res, 403, "Unauthorized sender or unverified domain.");
+  if (!fromMailbox?.smtpPasswordEncrypted) {
+    throw new ApiError(403, "Unauthorized sender or missing SMTP password");
   }
 
-  if (!fromMailbox.smtpPasswordEncrypted) {
-    return ApiError.send(res, 500, "Missing SMTP password for sender mailbox.");
-  }
-
-  const rawPassword = decrypt(fromMailbox.smtpPasswordEncrypted);
-  if (!rawPassword) {
-    return ApiError.send(res, 500, "SMTP password decryption failed.");
-  }
-
+  // Process attachments
   const attachments = [];
   if (files.length > 0) {
     const uploadDir = path.join(process.cwd(), "uploads");
     await fs.mkdir(uploadDir, { recursive: true });
 
     for (const file of files) {
-      const fileExt = path.extname(file.originalname);
-      const fileName = `${uuidv4()}${fileExt}`;
-      const savePath = path.join(uploadDir, fileName);
-      await fs.writeFile(savePath, file.buffer);
+      const fileName = `${uuidv4()}${path.extname(file.originalname)}`;
+      const filePath = path.join(uploadDir, fileName);
+      await fs.writeFile(filePath, file.buffer);
 
       attachments.push({
         filename: file.originalname,
-        path: savePath,
+        path: filePath,
         contentType: file.mimetype,
       });
     }
   }
 
   try {
-    console.log(`Attempting to send email from ${from} to ${to}`);
-    const transporter = await getMailTransporter(from, rawPassword);
+    // Send email
+    const transporter = await getMailTransporter(
+      fromMailbox.address,
+      decrypt(fromMailbox.smtpPasswordEncrypted)
+    );
 
     const mailOptions = {
-      from: `${fromMailbox.address}`,
+      from: `"${fromMailbox.name}" <${from}>`,
       to,
       subject,
       html: body,
       attachments,
     };
-    console.log("Attempting to send email with options:", {
-      from,
-      to,
-      subject,
-      host: transporter.options.host,
-      port: transporter.options.port,
-    });
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent successfully:", {
-      messageId: info.messageId,
-      envelope: info.envelope,
-      accepted: info.accepted,
-      rejected: info.rejected,
-    });
+    console.log("Email sent successfully:", info.messageId);
 
+    // Store in database
     const toMailbox = await Prisma.mailbox.findFirst({
       where: {
         address: to.toLowerCase(),
-        domain: {
-          verified: true,
-        },
-      },
-      include: {
-        domain: true,
+        domain: { verified: true },
       },
     });
 
     if (toMailbox) {
-      const message = await Prisma.message.create({
+      await Prisma.message.create({
         data: {
           from,
           to,
@@ -127,66 +94,39 @@ const sendEmail = asyncHandler(async (req, res) => {
             })),
           },
         },
-        include: {
-          attachments: true,
-        },
       });
-
-      return res
-        .status(201)
-        .json(new ApiResponse(201, "Email sent and stored locally", message));
     }
 
     return res.status(201).json(
       new ApiResponse(201, "Email sent successfully", {
         messageId: info.messageId,
-        envelope: info.envelope,
+        accepted: info.accepted,
       })
     );
   } catch (error) {
-    console.error("Full send error:", {
-      error: error.message,
-      stack: error.stack,
-      code: error.code,
-      response: error.response,
-    });
-    throw error;
+    console.error("Email sending failed:", error);
+    throw new ApiError(500, `Failed to send email: ${error.message}`);
   }
 });
 
-const getMessages = asyncHandler(async (req, res) => {
-  console.log("getMessages called for mailbox:", req.mailbox);
+export const getMessages = asyncHandler(async (req, res) => {
   const { mailboxId } = req.params;
   const userId = req.mailbox?.id;
 
   if (!userId) {
-    return ApiError.send(res, 401, "Authentication required");
-  }
-
-  const mailbox = await Prisma.mailbox.findFirst({
-    where: {
-      id: mailboxId,
-      id: userId,
-    },
-  });
-
-  if (!mailbox) {
-    return ApiError.send(res, 403, "Unauthorized access to mailbox");
+    throw new ApiError(401, "Authentication required");
   }
 
   const messages = await Prisma.message.findMany({
-    where: { mailboxId },
-    include: {
-      attachments: true,
+    where: {
+      mailboxId,
+      mailbox: { id: userId }, // Ensure mailbox belongs to user
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+    include: { attachments: true },
+    orderBy: { createdAt: "desc" },
   });
 
   return res
     .status(200)
     .json(new ApiResponse(200, "Messages retrieved successfully", messages));
 });
-
-export { sendEmail, getMessages };

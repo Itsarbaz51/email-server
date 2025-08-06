@@ -1,49 +1,40 @@
-import nodemailer from "nodemailer";
-import dotenv from "dotenv";
-import Prisma from "../db/db.js";
+export const getMailTransporter = async (email, password) => {
+  console.log(`Creating transporter for: ${email}`);
 
-dotenv.config();
-
-export const getMailTransporter = async (fullEmail) => {
-  const email = fullEmail.trim().toLowerCase();
-
-  const mailbox = await Prisma.mailbox.findFirst({
-    where: {
-      address: email,
-      domain: { is: { verified: true } },
-    },
-    include: {
-      domain: {
-        select: {
-          name: true,
-          dkimPrivateKey: true,
-          dkimSelector: true,
-        },
+  try {
+    const mailbox = await Prisma.mailbox.findFirst({
+      where: {
+        address: email.toLowerCase(),
+        domain: { verified: true },
       },
-    },
-  });
+    });
 
-  if (!mailbox) throw new Error("Mailbox not found or domain not verified");
-  if (!mailbox.domain?.dkimPrivateKey) throw new Error("DKIM key missing");
+    if (!mailbox) {
+      throw new Error("Mailbox not found or domain not verified");
+    }
 
-  const { name: domainName, dkimPrivateKey, dkimSelector } = mailbox.domain;
+    const transporter = nodemailer.createTransport({
+      host: "13.203.241.137",
+      port: 25,
+      secure: false,
+      auth: {
+        user: email,
+        pass: password || decrypt(mailbox.smtpPasswordEncrypted),
+      },
+      tls: {
+        rejectUnauthorized: false, // टेस्टिंग के लिए
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
+    });
 
-  const transporter = nodemailer.createTransport({
-    host: "127.0.0.1", // Local Postfix
-    port: 25,
-    secure: false, // Postfix usually doesn't use TLS on port 25 from localhost
-    tls: {
-      rejectUnauthorized: false, // in dev, accept self-signed
-    },
-    dkim: {
-      domainName,
-      keySelector: dkimSelector || "dkim",
-      privateKey: dkimPrivateKey,
-    },
-    logger: process.env.NODE_ENV !== "production",
-    debug: process.env.NODE_ENV !== "production",
-  });
+    console.log("Verifying transporter...");
+    await transporter.verify();
+    console.log("Transporter verified successfully");
 
-  await transporter.verify(); // ensure it's reachable
-  return transporter;
+    return transporter;
+  } catch (error) {
+    console.error("Transporter creation failed:", error);
+    throw new Error(`Failed to create transporter: ${error.message}`);
+  }
 };

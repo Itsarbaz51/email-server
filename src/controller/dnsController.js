@@ -1,47 +1,98 @@
 import dns from "dns/promises";
 import crypto from "crypto";
-import Prisma from "../db/db.js";
+import { Prisma } from "../db/db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 
-const DKIM_SELECTOR = "dkim";
+const DKIM_SELECTOR = "default";
+const SERVER_IP = process.env.SERVER_IP;
 
-// Format DKIM public key
-function formatDkimRecord(publicKey) {
-  const cleanedKey = publicKey
-    .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/\s+/g, "")
-    .trim();
-  return `v=DKIM1; k=rsa; p=${cleanedKey}`;
-}
-
-// Generate DKIM keys
 const generateDKIMKeys = () => {
-  const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
+  return crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
-    publicKeyEncoding: { type: "spki", format: "pem" },
-    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: {
+      type: "spki",
+      format: "pem",
+    },
+    privateKeyEncoding: {
+      type: "pkcs8",
+      format: "pem",
+    },
   });
-  return { privateKey, publicKey };
 };
 
-// DNS generation handler (A, MX, DKIM, SPF)
-export const generateDNSRecords = asyncHandler(async (req, res) => {
+// DNS Record Generator
+const generateDNSRecords = (domain, publicKey) => {
+  return [
+    // A Records
+    { type: "A", name: "mail", value: SERVER_IP, ttl: 3600 },
+    { type: "A", name: "@", value: SERVER_IP, ttl: 3600 },
+
+    // MX Record
+    {
+      type: "MX",
+      name: "@",
+      value: `mail.${domain}`,
+      priority: 10,
+      ttl: 3600,
+    },
+
+    // SPF Record
+    {
+      type: "TXT",
+      name: "@",
+      value: `v=spf1 ip4:${SERVER_IP} include:${domain} ~all`,
+      ttl: 3600,
+    },
+
+    // DKIM Record
+    {
+      type: "TXT",
+      name: `${DKIM_SELECTOR}._domainkey`,
+      value: `v=DKIM1; k=rsa; p=${publicKey
+        .replace(/-----BEGIN PUBLIC KEY-----/, "")
+        .replace(/-----END PUBLIC KEY-----/, "")
+        .replace(/\n/g, "")}`,
+      ttl: 3600,
+    },
+
+    // DMARC Record
+    {
+      type: "TXT",
+      name: "_dmarc",
+      value: `v=DMARC1; p=none; rua=mailto:admin@${domain}`,
+      ttl: 3600,
+    },
+  ];
+};
+
+// Generate DNS Records (API Endpoint)
+export const generateDNSRecordsHandler = asyncHandler(async (req, res) => {
   const { domain } = req.body;
   const userId = req.user.id;
 
-  if (!domain) return ApiError.send(res, 400, "Domain is required");
+  if (!domain) {
+    throw new ApiError(400, "Domain name is required");
+  }
 
-  const exists = await Prisma.domain.findFirst({
+  // Validate domain format
+  if (!/^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/.test(domain)) {
+    throw new ApiError(400, "Invalid domain format");
+  }
+
+  const existingDomain = await Prisma.domain.findFirst({
     where: { name: domain, adminId: userId },
   });
-  if (exists) return ApiError.send(res, 400, "Domain already exists");
 
+  if (existingDomain) {
+    throw new ApiError(409, "Domain already exists");
+  }
+
+  // Generate keys
   const { privateKey, publicKey } = generateDKIMKeys();
 
+  // Create domain
   const newDomain = await Prisma.domain.create({
     data: {
       name: domain,
@@ -52,128 +103,104 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     },
   });
 
-  const records = [
-    { type: "A", name: "mail", value: process.env.SERVER_IP, ttl: 3600 },
-    { type: "A", name: "@", value: process.env.SERVER_IP, ttl: 3600 },
-
-    {
-      type: "MX",
-      name: "@",
-      value: `mail.${domain}`,
-      priority: 10,
-      ttl: 3600,
-    },
-    {
-      type: "TXT",
-      name: "@",
-      value: `v=spf1 ip4:${process.env.SERVER_IP} mx ~all`,
-      ttl: 3600,
-    },
-    {
-      type: "TXT",
-      name: `${DKIM_SELECTOR}._domainkey`,
-      value: formatDkimRecord(publicKey),
-      ttl: 3600,
-    },
-  ];
-
-  const created = await Promise.all(
-    records.map((r) =>
+  // Create DNS records
+  const records = generateDNSRecords(domain, publicKey);
+  const createdRecords = await Promise.all(
+    records.map((record) =>
       Prisma.dnsRecord.create({
-        data: { ...r, domainId: newDomain.id },
+        data: { ...record, domainId: newDomain.id },
       })
     )
   );
 
-  return res.json(
-    new ApiResponse(200, "DNS records generated", {
+  res.status(201).json(
+    new ApiResponse(201, "DNS records generated", {
       domain: newDomain,
-      dnsRecords: created.map((r) => ({
-        id: r.id,
-        type: r.type,
-        name: r.name === "@" ? domain : `${r.name}.${domain}`,
-        value: r.value,
-        priority: r.priority,
-        ttl: r.ttl,
-      })),
+      records: createdRecords,
     })
   );
 });
 
-const verifyDNSRecord = async (domainId, recordType) => {
-  const domain = await Prisma.domain.findUnique({
-    where: { id: domainId },
-    include: {
-      dnsRecords: {
-        where: { type: recordType },
-      },
-    },
-  });
-
-  if (!domain) throw new Error("Domain not found");
-  if (!domain.dnsRecords.length)
-    throw new Error(`No ${recordType} records found`);
-
-  const results = [];
-
-  for (const record of domain.dnsRecords) {
-    const lookupName =
-      record.name === "@" ? domain.name : `${record.name}.${domain.name}`;
-
-    // Simulate verification
-    await Prisma.dnsRecord.update({
-      where: { id: record.id },
-      data: { verified: true },
-    });
-
-    results.push({
-      matched: true,
-      expected: record.value,
-      found: [record.value],
-      record,
-      lookupName,
-    });
+// Actual DNS Verification
+const verifyRecord = async (domain, type, expectedValue) => {
+  try {
+    const records = await dns.resolve(domain, type);
+    return {
+      verified: records.includes(expectedValue),
+      expected: expectedValue,
+      actual: records,
+    };
+  } catch (err) {
+    return {
+      verified: false,
+      error: err.message,
+    };
   }
-
-  return results;
 };
 
-export const verifyDnsHandler = asyncHandler(async (req, res) => {
+// Verify DNS Records (API Endpoint)
+export const verifyDNSRecordsHandler = asyncHandler(async (req, res) => {
   const { id: domainId } = req.params;
-  const type = req.query.type?.toUpperCase();
+  const { type } = req.query;
 
-  if (!domainId) return ApiError.send(res, 400, "Domain ID is required");
+  const domain = await Prisma.domain.findUnique({
+    where: { id: domainId },
+    include: { dnsRecords: true },
+  });
 
-  try {
-    if (type) {
-      const results = await verifyDNSRecord(domainId, type);
+  if (!domain) {
+    throw new ApiError(404, "Domain not found");
+  }
 
-      return res.json(
-        new ApiResponse(200, `${type} records verified`, { results })
-      );
+  // If specific type requested
+  if (type) {
+    const record = domain.dnsRecords.find((r) => r.type === type.toUpperCase());
+    if (!record) {
+      throw new ApiError(404, `${type} record not found`);
     }
 
-    const types = ["MX", "TXT"];
-    const allResults = await Promise.all(
-      types.map((t) => verifyDNSRecord(domainId, t))
+    const result = await verifyRecord(
+      record.name === "@" ? domain.name : `${record.name}.${domain.name}`,
+      record.type,
+      record.value
     );
-
-    const flatResults = allResults.flat();
-
-    // ✅ Update domain verified = true
-    const domain = await Prisma.domain.update({
-      where: { id: domainId },
-      data: { verified: true },
-      select: { name: true, verified: true },
-    });
 
     return res.json(
-      new ApiResponse(200, "All DNS records force-verified", {
-        domain,
-        results: flatResults,
+      new ApiResponse(200, "Verification result", {
+        type,
+        ...result,
       })
     );
-  } catch (error) {
-    return ApiError.send(res, 500, `Verification failed: ${error.message}`);
   }
+
+  // Verify all records
+  const verificationResults = await Promise.all(
+    domain.dnsRecords.map(async (record) => {
+      const result = await verifyRecord(
+        record.name === "@" ? domain.name : `${record.name}.${domain.name}`,
+        record.type,
+        record.value
+      );
+      return {
+        type: record.type,
+        name: record.name,
+        ...result,
+      };
+    })
+  );
+
+  // Update verification status
+  const allVerified = verificationResults.every((r) => r.verified);
+  await Prisma.domain.update({
+    where: { id: domainId },
+    data: { verified: allVerified },
+  });
+
+  res.json(
+    new ApiResponse(200, "DNS verification completed", {
+      domain: domain.name,
+      verified: allVerified,
+      results: verificationResults,
+    })
+  );
 });
