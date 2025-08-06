@@ -11,6 +11,7 @@ dotenv.config({ path: "./.env" });
     await Prisma.$connect();
     console.log("✅ DATABASE CONNECTED SUCCESSFULLY");
 
+    // SMTP Submission Server (port 587)
     const submissionServer = new SMTPServer({
       ...serverOptions,
       name: "submission",
@@ -21,35 +22,17 @@ dotenv.config({ path: "./.env" });
       },
     });
 
-    const relayServer = new SMTPServer({
-      ...serverOptions,
-      name: "relay",
-      authOptional: true,
-      onConnect(session, callback) {
-        console.log(`📡 Relay client connected: ${session.remoteAddress}`);
-        serverOptions.onConnect(session, callback);
-      },
-    });
-
     // Error handling
     submissionServer.on("error", (err) => {
       console.error("❌ Submission server error:", err);
     });
 
-    relayServer.on("error", (err) => {
-      console.error("❌ Relay server error:", err);
-    });
-
-    // Start servers
+    // Start Submission Server only (Postfix handles relay on port 25)
     submissionServer.listen(587, "0.0.0.0", () => {
       console.log("📤 Submission server running on port 587");
     });
 
-    relayServer.listen(25, "0.0.0.0", () => {
-      console.log("📥 Relay server running on port 25");
-    });
-
-    // HTTP Server
+    // Start HTTP API Server
     const PORT = process.env.PORT || 9000;
     app.listen(PORT, () => {
       console.log(`🚀 HTTP server running on port ${PORT}`);
@@ -60,7 +43,6 @@ dotenv.config({ path: "./.env" });
       console.log("🛑 Shutting down gracefully...");
       await Promise.all([
         new Promise((res) => submissionServer.close(res)),
-        new Promise((res) => relayServer.close(res)),
         Prisma.$disconnect(),
       ]);
       process.exit(0);
