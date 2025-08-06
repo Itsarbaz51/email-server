@@ -1,6 +1,6 @@
-import Prisma from "./db/db.js";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
+import Prisma from "../db/db.js";
 dotenv.config();
 
 export const getMailTransporter = async (fullEmail, rawPassword) => {
