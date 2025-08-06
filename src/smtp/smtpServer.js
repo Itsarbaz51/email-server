@@ -1,41 +1,6 @@
 export const serverOptions = {
-  authOptional: true, // बाहरी मेल सर्वर्स के लिए ऑथेंटिकेशन ऑप्शनल
+  authOptional: true, 
 
-  // ऑथेंटिकेशन हेंडलर
-  async onAuth(auth, session, callback) {
-    // बाहरी मेल सर्वर्स के लिए ऑथेंटिकेशन नहीं मांगेगा
-    if (!auth) {
-      session.anonymous = true;
-      return callback(null, {});
-    }
-
-    // आपके अपने यूजर्स के लिए ऑथेंटिकेशन
-    try {
-      if (auth.method !== "PLAIN" && auth.method !== "LOGIN") {
-        return callback(new Error("Only PLAIN/LOGIN auth supported"));
-      }
-
-      const credentials = Buffer.from(auth.password, "base64").toString("utf8");
-      const [username, password] = credentials.split("\x00").slice(1);
-
-      const user = await Prisma.mailbox.findFirst({
-        where: {
-          address: username.toLowerCase(),
-          password: decrypt(password),
-          domain: { verified: true },
-        },
-      });
-
-      if (!user) {
-        return callback(new Error("Invalid credentials"));
-      }
-
-      session.user = user;
-      callback(null, { user: username });
-    } catch (err) {
-      callback(new Error("Authentication failed"));
-    }
-  },
 
   // मेल फ्रॉम वैलिडेशन
   async onMailFrom(address, session, callback) {
