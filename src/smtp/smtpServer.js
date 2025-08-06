@@ -39,18 +39,9 @@ export const serverOptions = {
 
   // मेल फ्रॉम वैलिडेशन
   async onMailFrom(address, session, callback) {
-    try {
-      // सिर्फ आपके अपने यूजर्स के लिए ऑथेंटिकेशन चेक करें
-      if (!session.anonymous && !session.user) {
-        return callback(new Error("Authentication required for sending"));
-      }
-
-      // बाहरी मेल के लिए कोई ऑथेंटिकेशन नहीं
-      console.log(`✉️ Mail from ${address.address}`);
-      callback();
-    } catch (err) {
-      callback(err);
-    }
+    // बाहरी मेल के लिए कोई ऑथेंटिकेशन नहीं
+    console.log(`✉️ Mail from ${address.address}`);
+    callback();
   },
 
   // रिसिपिएंट वैलिडेशन
