@@ -1,13 +1,18 @@
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import Prisma from "../db/db.js";
+
 dotenv.config();
 
 export const getMailTransporter = async (fullEmail, rawPassword) => {
+  const email = fullEmail.trim().toLowerCase();
+
   const mailbox = await Prisma.mailbox.findFirst({
     where: {
-      address: fullEmail.toLowerCase(),
-      domain: { is: { verified: true } },
+      address: email,
+      domain: {
+        is: { verified: true },
+      },
     },
     include: {
       domain: {
@@ -20,18 +25,18 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
     },
   });
 
-  if (!mailbox) throw new Error("Mailbox not found");
-  if (!mailbox.domain?.dkimPrivateKey) throw new Error("DKIM not configured");
+  if (!mailbox) throw new Error("Mailbox not found or domain not verified");
+  if (!mailbox.domain?.dkimPrivateKey) throw new Error("DKIM key missing");
 
-  const { dkimPrivateKey, name: domainName, dkimSelector } = mailbox.domain;
+  const { name: domainName, dkimPrivateKey, dkimSelector } = mailbox.domain;
 
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || `mail.${domainName}`,
+    host: `mail.${domainName}`,
     port: Number(process.env.SMTP_PORT) || 587,
     secure: false,
     requireTLS: true,
     auth: {
-      user: fullEmail.trim().toLowerCase(),
+      user: email,
       pass: rawPassword,
     },
     dkim: {
@@ -40,12 +45,12 @@ export const getMailTransporter = async (fullEmail, rawPassword) => {
       privateKey: dkimPrivateKey,
     },
     tls: {
-      rejectUnauthorized: process.env.NODE_ENV === "production",
+      rejectUnauthorized: false, // skip cert check in dev
     },
     logger: process.env.NODE_ENV !== "production",
     debug: process.env.NODE_ENV !== "production",
   });
 
-  await transporter.verify();
+  await transporter.verify(); // throws error if not connected
   return transporter;
 };

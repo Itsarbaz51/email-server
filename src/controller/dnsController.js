@@ -7,7 +7,7 @@ import { ApiError } from "../utils/ApiError.js";
 
 const DKIM_SELECTOR = "dkim";
 
-// ✅ Format DKIM public key for TXT record
+// Format DKIM public key
 function formatDkimRecord(publicKey) {
   const cleanedKey = publicKey
     .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "")
@@ -15,34 +15,29 @@ function formatDkimRecord(publicKey) {
     .replace(/\r/g, "")
     .replace(/\s+/g, "")
     .trim();
-
   return `v=DKIM1; k=rsa; p=${cleanedKey}`;
 }
 
-// ✅ DKIM keypair generator
+// Generate DKIM keys
 const generateDKIMKeys = () => {
   const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
     publicKeyEncoding: { type: "spki", format: "pem" },
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
   });
-
-  return {
-    privateKey,
-    publicKey,
-  };
+  return { privateKey, publicKey };
 };
 
+// DNS generation handler (A, MX, DKIM, SPF)
 export const generateDNSRecords = asyncHandler(async (req, res) => {
   const { domain } = req.body;
   const userId = req.user.id;
 
-  if (!domain) ApiError.send(res, 400, "Domain is required");
+  if (!domain) return ApiError.send(res, 400, "Domain is required");
 
   const exists = await Prisma.domain.findFirst({
     where: { name: domain, adminId: userId },
   });
-
   if (exists) return ApiError.send(res, 400, "Domain already exists");
 
   const { privateKey, publicKey } = generateDKIMKeys();
@@ -61,8 +56,13 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
     { type: "A", name: "mail", value: process.env.SERVER_IP, ttl: 3600 },
     { type: "A", name: "@", value: process.env.SERVER_IP, ttl: 3600 },
 
-    { type: "MX", name: "@", value: `mail.${domain}`, priority: 10, ttl: 3600 },
-
+    {
+      type: "MX",
+      name: "@",
+      value: `mail.${domain}`,
+      priority: 10,
+      ttl: 3600,
+    },
     {
       type: "TXT",
       name: "@",
@@ -75,29 +75,13 @@ export const generateDNSRecords = asyncHandler(async (req, res) => {
       value: formatDkimRecord(publicKey),
       ttl: 3600,
     },
-    {
-      type: "TXT",
-      name: "_dmarc",
-      value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}; adkim=s; aspf=s; fo=1`,
-      ttl: 3600,
-    },
-    {
-      type: "TXT",
-      name: "_mta-sts",
-      value: `v=STSv1; id=${Math.floor(Date.now() / 1000)}`,
-      ttl: 86400,
-    },
-    {
-      type: "TXT",
-      name: "_smtp._tls",
-      value: `v=TLSRPTv1; rua=mailto:tls-reports@${domain}`,
-      ttl: 86400,
-    },
   ];
 
   const created = await Promise.all(
     records.map((r) =>
-      Prisma.dnsRecord.create({ data: { ...r, domainId: newDomain.id } })
+      Prisma.dnsRecord.create({
+        data: { ...r, domainId: newDomain.id },
+      })
     )
   );
 
