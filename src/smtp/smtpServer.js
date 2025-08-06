@@ -1,3 +1,7 @@
+import { simpleParser } from "mailparser";
+import  Prisma from "../db/db.js";
+
+
 export const serverOptions = {
   authOptional: true,
   allowInsecureAuth: true,
