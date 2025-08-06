@@ -1,11 +1,18 @@
 export const serverOptions = {
-  authOptional: false,
-  logger: true,
+  authOptional: true, // बाहरी मेल के लिए ऑथेंटिकेशन ऑप्शनल बनाया
   secure: false,
   disabledCommands: [],
-  banner: "Welcome to My SMTP Server",
+  banner: "Welcome to My Mail Server",
+  logger: true, // विस्तृत लॉगिंग के लिए
 
+  // ऑथेंटिकेशन हेंडलर
   async onAuth(auth, session, callback) {
+    // बाहरी मेल सर्वर्स के लिए ऑथेंटिकेशन नहीं मांगेगा
+    if (!auth) {
+      session.anonymous = true; // यह एक बाहरी कनेक्शन है
+      return callback(null, {});
+    }
+
     try {
       console.log(`Auth attempt: ${auth.method}`);
 
@@ -39,21 +46,15 @@ export const serverOptions = {
     }
   },
 
-  async onConnect(session, callback) {
-    console.log(`📡 SMTP connection from ${session.remoteAddress}`);
-    callback();
-  },
-
+  // मेल फ्रॉम वैलिडेशन
   async onMailFrom(address, session, callback) {
     try {
-      // Verify karo ki sender apna hi email use kar raha hai
-      const fromEmail = address.address.toLowerCase();
-      if (fromEmail !== session.user.address) {
-        return callback(
-          new Error("You can only send from your registered email")
-        );
+      // सिर्फ लोकल यूजर्स के लिए ऑथेंटिकेशन चेक करें
+      if (!session.anonymous && !session.user) {
+        return callback(new Error("Authentication required for sending"));
       }
 
+      const fromEmail = address.address.toLowerCase();
       console.log(`✉️ Mail from ${fromEmail}`);
       callback();
     } catch (err) {
@@ -61,16 +62,15 @@ export const serverOptions = {
     }
   },
 
+  // रिसिपिएंट वैलिडेशन
   async onRcptTo(address, session, callback) {
     try {
       const to = address?.address?.toLowerCase?.();
 
-      // Basic email format check
       if (!to || !to.includes("@")) {
         return callback(new Error("Invalid Email address"));
       }
 
-      // Check karo ki recipient exists karta hai
       const existingMailbox = await Prisma.mailbox.findFirst({
         where: {
           address: to,
@@ -88,6 +88,7 @@ export const serverOptions = {
     }
   },
 
+  // डेटा प्रोसेसिंग
   async onData(stream, session, callback) {
     try {
       let rawEmail = Buffer.from([]);
@@ -97,34 +98,43 @@ export const serverOptions = {
       });
 
       stream.on("end", async () => {
-        const parsed = await simpleParser(rawEmail);
+        try {
+          const parsed = await simpleParser(rawEmail);
 
-        for (const rcpt of session.envelope.rcptTo) {
-          const to = rcpt.address.toLowerCase();
-          const mailbox = await Prisma.mailbox.findFirst({
-            where: {
-              address: to,
-              domain: { verified: true },
-            },
-          });
-
-          if (mailbox) {
-            await Prisma.message.create({
-              data: {
-                from: session.envelope.mailFrom.address,
-                to,
-                subject: parsed.subject || "(No Subject)",
-                text: parsed.text || "",
-                html: parsed.html || "",
-                raw: rawEmail.toString("utf-8"),
-                mailboxId: mailbox.id,
+          for (const rcpt of session.envelope.rcptTo) {
+            const to = rcpt.address.toLowerCase();
+            const mailbox = await Prisma.mailbox.findFirst({
+              where: {
+                address: to,
+                domain: { verified: true },
               },
             });
+
+            if (mailbox) {
+              await Prisma.message.create({
+                data: {
+                  from: session.envelope.mailFrom.address,
+                  to,
+                  subject: parsed.subject || "(No Subject)",
+                  text: parsed.text || "",
+                  html: parsed.html || "",
+                  raw: rawEmail.toString("utf-8"),
+                  mailboxId: mailbox.id,
+                  isRead: false,
+                  receivedAt: new Date(),
+                },
+              });
+              console.log(`📨 Stored message for ${to}`);
+            }
           }
+          callback();
+        } catch (err) {
+          console.error("Error processing email:", err);
+          callback(err);
         }
-        callback();
       });
     } catch (err) {
+      console.error("Data handling error:", err);
       callback(err);
     }
   },
