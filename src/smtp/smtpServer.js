@@ -2,6 +2,7 @@
 import crypto from "crypto";
 import { decrypt } from "../utils/encryption.js";
 import Prisma from "../db/db.js";
+import { simpleParser } from "mailparser";
 
 // Safe timing comparison with logging
 const safeCompare = (a, b) => {
