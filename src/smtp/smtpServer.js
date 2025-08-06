@@ -1,7 +1,7 @@
 // smtpServer.js
-import Prisma from "./db/db.js";
 import crypto from "crypto";
-import { decrypt } from "./utils/encryption.js";
+import { decrypt } from "../utils/encryption.js";
+import Prisma from "../db/db.js";
 
 // Safe timing comparison with logging
 const safeCompare = (a, b) => {
