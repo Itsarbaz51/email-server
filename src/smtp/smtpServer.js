@@ -1,43 +1,43 @@
 export const serverOptions = {
   authOptional: false,
-  logger: true,
-  secure: false,
-  disabledCommands: [],
-  banner: "Welcome to My SMTP Server",
+  // logger: true,
+  // secure: false,
+  // disabledCommands: [],
+  // banner: "Welcome to My SMTP Server",
 
-  async onAuth(auth, session, callback) {
-    try {
-      console.log(`Auth attempt: ${auth.method}`);
+  // async onAuth(auth, session, callback) {
+  //   try {
+  //     console.log(`Auth attempt: ${auth.method}`);
 
-      if (auth.method !== "PLAIN" && auth.method !== "LOGIN") {
-        return callback(new Error("Only PLAIN/LOGIN auth supported"));
-      }
+  //     if (auth.method !== "PLAIN" && auth.method !== "LOGIN") {
+  //       return callback(new Error("Only PLAIN/LOGIN auth supported"));
+  //     }
 
-      const credentials = Buffer.from(auth.password, "base64").toString("utf8");
-      const [username, password] = credentials.split("\x00").slice(1);
+  //     const credentials = Buffer.from(auth.password, "base64").toString("utf8");
+  //     const [username, password] = credentials.split("\x00").slice(1);
 
-      console.log(`Auth attempt for: ${username}`);
+  //     console.log(`Auth attempt for: ${username}`);
 
-      const user = await Prisma.mailbox.findFirst({
-        where: {
-          address: username.toLowerCase(),
-          password: decrypt(password),
-          domain: { verified: true },
-        },
-      });
+  //     const user = await Prisma.mailbox.findFirst({
+  //       where: {
+  //         address: username.toLowerCase(),
+  //         password: decrypt(password),
+  //         domain: { verified: true },
+  //       },
+  //     });
 
-      if (!user) {
-        console.log("Invalid credentials");
-        return callback(new Error("Invalid credentials"));
-      }
+  //     if (!user) {
+  //       console.log("Invalid credentials");
+  //       return callback(new Error("Invalid credentials"));
+  //     }
 
-      session.user = user;
-      callback(null, { user: username });
-    } catch (err) {
-      console.error("Auth error:", err);
-      callback(new Error("Authentication failed"));
-    }
-  },
+  //     session.user = user;
+  //     callback(null, { user: username });
+  //   } catch (err) {
+  //     console.error("Auth error:", err);
+  //     callback(new Error("Authentication failed"));
+  //   }
+  // },
 
   async onConnect(session, callback) {
     console.log(`📡 SMTP connection from ${session.remoteAddress}`);
