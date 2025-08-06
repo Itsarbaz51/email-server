@@ -45,7 +45,7 @@ export const serverOptions = {
           address: to,
           domain: {
             is: {
-              domain: domain,
+              address: domain,
               verified: true,
             },
           },
